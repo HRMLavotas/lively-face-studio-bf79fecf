@@ -328,7 +328,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       mixerRef.current = null;
       disconnectAudio();
     };
-  }, [modelUrl, animate, disconnectAudio]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelUrl]);
 
   return (
     <div ref={containerRef} className={`relative w-full h-full ${className ?? ''}`}>
