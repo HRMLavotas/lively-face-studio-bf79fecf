@@ -161,17 +161,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
       const level = isSpeakingRef.current ? getAudioLevel() : 0;
 
-      // Update VRMA mixer first — it sets bone rotations
+      // Update VRMA mixer when active — only source of body motion
       if (mixerRef.current && vrmaPlayingRef.current) {
-        // Always update mixer when a VRMA is active (even after finished,
-        // so that clampWhenFinished holds the last pose)
         mixerRef.current.update(delta);
-      } else {
-        // Procedural body/arm animations only run when no VRMA is active
-        updateSpeakingGestures(level, isSpeakingRef.current, vrm, delta);
-        updateIdleFidgets(delta, isSpeakingRef.current);
-        updateIdleAnimation(elapsed, vrm, isSpeakingRef.current);
       }
+      // No procedural body/arm/idle animations — face-only blendshapes
 
       // Lip sync + expressions ALWAYS run (don't conflict with VRMA bones)
       if (isSpeakingRef.current) {
