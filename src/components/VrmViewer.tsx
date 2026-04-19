@@ -7,9 +7,6 @@ import {
   updateMicroExpressions,
   updateLipSync,
   resetMouthExpressions,
-  updateIdleAnimation,
-  updateSpeakingGestures,
-  updateIdleFidgets,
   setTargetMood,
 } from '@/lib/vrm-animations';
 import { detectMood } from '@/lib/sentiment';
