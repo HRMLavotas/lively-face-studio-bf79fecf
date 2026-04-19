@@ -53,11 +53,6 @@ export async function loadVRMA(url: string, vrm: VRM): Promise<THREE.AnimationCl
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     throw new Error(`Tidak bisa parse file VRMA: ${msg}`);
-  } finally {
-    // Revoke blob URL after parsing to avoid memory leak (only for blob: urls)
-    if (url.startsWith('blob:')) {
-      try { URL.revokeObjectURL(url); } catch { /* ignore */ }
-    }
   }
 
   const vrmAnimations: VRMAnimation[] | undefined = gltf.userData.vrmAnimations;
