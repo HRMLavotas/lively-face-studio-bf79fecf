@@ -26,7 +26,7 @@ function ensureLookAtProxy(vrm: VRM): void {
   );
   if (!existing) {
     const proxy = new VRMLookAtQuaternionProxy(vrm.lookAt);
-    proxy.name = 'VRMLookAtQuaternionProxy';
+    (proxy as unknown as THREE.Object3D).name = 'VRMLookAtQuaternionProxy';
     vrm.scene.add(proxy);
     console.log('[VRMA] VRMLookAtQuaternionProxy added to scene');
   }
