@@ -145,7 +145,6 @@ export function playVRMA(
     const root = mixer.getRoot() as THREE.Object3D;
     // Uncache root removes every action bound to this mixer's root
     mixer.uncacheRoot(root);
-    mixer.uncacheClip(clip);
   } catch (e) {
     console.warn('playVRMA: cleanup failed (safe to ignore):', e);
   }

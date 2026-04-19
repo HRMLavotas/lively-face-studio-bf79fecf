@@ -54,6 +54,15 @@ export default function AdminAnimations() {
       });
   }, [user]);
 
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (prevBlobUrlRef.current) {
+        URL.revokeObjectURL(prevBlobUrlRef.current);
+      }
+    };
+  }, []);
+
   if (authLoading || roleLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
@@ -74,7 +83,15 @@ export default function AdminAnimations() {
     return false;
   };
 
+  const prevBlobUrlRef = useRef<string | null>(null);
+
   const handleFileSelected = async (file: File, blobUrl: string) => {
+    // Revoke previous blob URL to prevent memory leaks
+    if (prevBlobUrlRef.current && prevBlobUrlRef.current !== blobUrl) {
+      URL.revokeObjectURL(prevBlobUrlRef.current);
+    }
+    prevBlobUrlRef.current = blobUrl;
+
     setPreviewFile(file);
     setPreviewUrl(blobUrl);
     if (!name) setName(file.name.replace(/\.vrma$/i, ''));
