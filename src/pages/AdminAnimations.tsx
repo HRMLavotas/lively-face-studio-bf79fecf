@@ -27,6 +27,7 @@ export default function AdminAnimations() {
   const { user, loading: authLoading } = useAuth();
   const { isAdmin, loading: roleLoading } = useUserRole();
   const viewerRef = useRef<VrmViewerHandle>(null);
+  const prevBlobUrlRef = useRef<string | null>(null);
 
   const [modelUrl, setModelUrl] = useState('');
   const [previewFile, setPreviewFile] = useState<File | null>(null);
@@ -82,8 +83,6 @@ export default function AdminAnimations() {
     }
     return false;
   };
-
-  const prevBlobUrlRef = useRef<string | null>(null);
 
   const handleFileSelected = async (file: File, blobUrl: string) => {
     // Revoke previous blob URL to prevent memory leaks
