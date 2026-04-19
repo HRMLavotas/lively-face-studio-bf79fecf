@@ -1,65 +1,65 @@
 
-User wants to remove all procedural body/idle/gesture animations from the VRM model, keeping ONLY facial blendshape animations (blink, micro-expressions, lip-sync, mood). This way:
-1. The default avatar only has facial animations
-2. In Animation Studio, when uploading a VRMA file, the body animation will be clearly visible without procedural animations interfering
 
-Let me check what's in vrm-animations.ts to confirm scope.
-<lov-tool-use id="toolu_vrtx_01Qrx1oofFPTK94f1x8StXXm" name="code--view" integration-id="code" data="{\"file_path\": \"src/lib/vrm-animations.ts\", \"lines\": \"1-50\"}">
-</lov-tool-use>
+## Plan: Fix admin role + Animation Studio reliability
 
-<lov-tool-use id="toolu_vrtx_017XDj2BzVmx4D3a2KvhVV3a" name="code--search_files" integration-id="code" data="{\"query\": \"updateIdleAnimation|updateSpeakingGestures|updateIdleFidgets\", \"include_patterns\": \"*.ts,*.tsx\"}">
-</lov-tool-use>
+### Masalah 1: Profile & role tidak ter-create untuk Google sign-up
+Database menunjukkan user `ali.coolz30@gmail.com` (id `3a6d3679...`) ada di `auth.users` tapi `profiles` dan `user_roles` kosong. Function `handle_new_user()` sudah ada dan benar (sudah handle email admin), tapi **trigger `on_auth_user_created` tidak terpasang** (lihat `<db-triggers>`: "There are no triggers in the database").
 
-<lov-tool-use id="toolu_vrtx_01HS6tKxpB8bid4MikRVQ8fe" name="code--view" integration-id="code" data="{\"file_path\": \"src/lib/vrm-animations.ts\"}">
-</lov-tool-use>
+**Fix:**
+1. Migration: buat trigger `on_auth_user_created AFTER INSERT ON auth.users` yang memanggil `public.handle_new_user()`.
+2. Backfill data untuk user existing — INSERT ke `profiles` (display_name dari Google metadata) dan `user_roles` dengan role `admin` untuk `ali.coolz30@gmail.com`.
 
-<lov-tool-use id="toolu_vrtx_018mhb5bDvcQ5WeGDQcK9Pty" name="code--search_files" integration-id="code" data="{\"query\": \"updateIdleAnimation|updateSpeakingGestures|updateIdleFidgets\", \"include_patterns\": \"*.ts,*.tsx\"}">
-</lov-tool-use>
+### Masalah 2: Animation Studio terasa "reload" saat upload VRMA
+Root cause yang ditemukan:
+- `<Button>` shadcn tidak set `type` default → default ke `"submit"`. Walau tidak ada `<form>` parent saat ini, ini risky. Tambah `type="button"` di `VrmaUploader` untuk safety.
+- Saat file dipilih, `handleFileSelected` dipanggil tapi jika model VRM belum siap (`isVrmLoaded()` false) hanya muncul toast warning — file blob URL tidak disimpan untuk retry. User harus pilih ulang.
+- VRMA player saat ini sudah benar secara dokumentasi Pixiv (`VRMAnimationLoaderPlugin` + `createVRMAnimationClip` + `VRMLookAtQuaternionProxy`), tapi ada beberapa issue minor:
+  - `loadVRMA` tidak revoke blob URL setelah parsing (memory leak kecil)
+  - Mixer di-recreate kalau null tapi tidak di-uncache action lama dengan benar saat ganti file → kadang frame pertama nge-snap ke pose lama
+  - Tidak ada feedback visual saat clip sedang di-load (UI terlihat "freeze")
 
-<lov-tool-use id="toolu_vrtx_01D4DZeqwgxb9eDbk7C6t4RD" name="code--view" integration-id="code" data="{\"file_path\": \"src/pages/AdminAnimations.tsx\"}">
-</lov-tool-use>
-I have enough context. The user wants to remove all procedural body/arm/idle animations from the model. Keep only facial blendshapes (blink, mood/micro expressions, lip sync). The animation studio should already work since procedural animations don't run when VRMA is active, but the issue may also be the existing build error. Let me also fix the `.name` property error.
+**Fix di Animation Studio:**
+1. **`src/components/VrmaUploader.tsx`**: tambah `type="button"` ke `<Button>`.
+2. **`src/pages/AdminAnimations.tsx`**:
+   - Polling/retry: jika `isVrmLoaded()` false saat file dipilih, tunggu sampai model siap (poll tiap 200ms, max 10 detik) lalu auto-play.
+   - Tampilkan loading state saat clip sedang di-parse.
+3. **`src/lib/vrma-player.ts`**:
+   - Sebelum `mixer.clipAction(clip)`, panggil `mixer.stopAllAction()` + iterasi `mixer._actions` untuk uncache semua clip lama (bukan hanya clip baru). Ini mencegah pose residual.
+   - Reset pose VRM ke rest pose (`vrm.humanoid.resetNormalizedPose()`) sebelum mainkan clip baru, agar transition dari clip ke clip bersih.
+4. **`src/components/VrmViewer.tsx`**:
+   - Saat `playVrmaUrl` dipanggil, panggil `vrm.humanoid?.resetNormalizedPose()` sebelum mulai mixer agar tidak ada residual pose dari clip sebelumnya.
+   - Pastikan `useImperativeHandle` deps berisi `[]` tetap valid (refs mutable, OK).
 
-<lov-plan>
+### Perubahan database (migration)
+```sql
+-- Trigger untuk auto-create profile + role on signup
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+```
 
-## Plan: Reset semua animasi body, pertahankan hanya animasi wajah
+### Perubahan data (insert tool)
+```sql
+-- Backfill profile untuk user existing
+INSERT INTO public.profiles (user_id, display_name)
+VALUES ('3a6d3679-059b-4188-9ff0-d4fa467effbb', 'LittleDunk STAR')
+ON CONFLICT DO NOTHING;
 
-### Tujuan
-Hapus seluruh animasi prosedural pada body/arm/head/idle. Pertahankan hanya animasi blendshape wajah (blink, mood micro-expressions, lip sync, mouth shapes). Ini juga memastikan Animation Studio menampilkan VRMA murni tanpa interferensi.
+-- Beri role admin
+INSERT INTO public.user_roles (user_id, role)
+VALUES ('3a6d3679-059b-4188-9ff0-d4fa467effbb', 'admin')
+ON CONFLICT DO NOTHING;
+```
 
-### Perubahan
-
-**1. `src/components/VrmViewer.tsx`**
-- Hapus import: `updateIdleAnimation`, `updateSpeakingGestures`, `updateIdleFidgets`.
-- Di `animate()` loop, hapus blok `else` yang memanggil ketiga fungsi tersebut. Pertahankan:
-  - `updateBlink` (kedipan mata)
-  - `updateMicroExpressions` (mood + brow + subtle expressions)
-  - `updateLipSync` (sinkronisasi mulut saat speaking)
-  - `resetMouthExpressions` (reset saat berhenti bicara)
-  - `setTargetMood` (driver mood dari sentiment)
-  - VRMA mixer update (untuk Animation Studio)
-
-**2. `src/lib/vrm-animations.ts`**
-- Hapus fungsi (tidak terpakai lagi):
-  - `updateSpeakingGestures` + seluruh gesture catalogue (GESTURE_CATALOGUE, presets OPEN_HAND/RELAXED_HAND/dll, ArmSmooth, finger logic)
-  - `updateIdleFidgets` + state fidget terkait
-  - `updateIdleAnimation` (head sway, spine bob, breathing, arm sway prosedural)
-  - `getMoodHeadBias` jika hanya dipakai oleh idle animation
-- **Pertahankan**:
-  - Blink system (`updateBlink`)
-  - Mood system (`setTargetMood`, `getActiveMood`, `setIdleMoodEnabled`, `updateMicroExpressions`, MOOD_PRESETS, lerpMood)
-  - Lip sync (`updateLipSync`, `resetMouthExpressions`, MOUTH_SHAPES)
-
-**3. Fix build error existing — `src/lib/vrma-player.ts` line 29**
-- `VRMLookAtQuaternionProxy` extends `THREE.Object3D`, tapi TS overloadnya tidak meng-expose `.name`. Solusi: assign via cast (`(proxy as THREE.Object3D).name = '...'`) atau hapus baris assignment nama proxy (tidak fungsional, hanya debug label).
+### File yang akan diubah
+- `supabase/migrations/<new>.sql` — trigger
+- `src/components/VrmaUploader.tsx` — `type="button"`
+- `src/pages/AdminAnimations.tsx` — retry logic + loading state
+- `src/lib/vrma-player.ts` — uncache + pose reset
+- `src/components/VrmViewer.tsx` — reset pose sebelum play VRMA
 
 ### Hasil yang diharapkan
-- Model berdiri statis pada T-pose/rest pose VRM aslinya.
-- Wajah tetap "hidup": kedipan, mood, ekspresi mikro, lip sync saat TTS.
-- Animation Studio: saat upload VRMA, satu-satunya gerakan body adalah dari file VRMA tersebut — tidak ada lagi gangguan dari gesture/idle prosedural.
-- Build error TS2339 hilang.
-
-### Catatan
-- Procedural code sudah di-skip saat VRMA aktif (via `vrmaPlayingRef`), tapi sekarang dihapus total agar konsisten di semua tempat (chat utama juga tidak akan ada gerakan body prosedural).
-- Tidak ada perubahan database / Supabase / UI lain.
+- User `ali.coolz30@gmail.com` punya role `admin` → menu Animation Studio terbuka.
+- Future Google signup otomatis dapat profile + role `free` (atau `admin` kalau email match).
+- Upload VRMA langsung tampil tanpa "reload" feeling, transition antar clip bersih.
 
