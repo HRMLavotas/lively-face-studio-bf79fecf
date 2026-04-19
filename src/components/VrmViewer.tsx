@@ -143,6 +143,12 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     },
   }), []);
 
+  // Keep latest getAudioLevel in a ref so animate() doesn't need it as a dep.
+  // This prevents the main useEffect from re-running (and reloading VRM + mixer)
+  // every time the audio analyser reference changes.
+  const getAudioLevelRef = useRef(getAudioLevel);
+  getAudioLevelRef.current = getAudioLevel;
+
   const animate = useCallback(() => {
     rafRef.current = requestAnimationFrame(animate);
 
