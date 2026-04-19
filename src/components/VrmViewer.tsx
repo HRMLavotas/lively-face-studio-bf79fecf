@@ -107,6 +107,13 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         mixerRef.current = createMixer(targetVrm);
       }
 
+      // Reset pose to rest before applying new clip — prevents residual pose snap
+      try {
+        targetVrm.humanoid?.resetNormalizedPose();
+      } catch (e) {
+        console.warn('[VRMA] resetNormalizedPose failed (safe to ignore):', e);
+      }
+
       const mixer = mixerRef.current;
       // Set vrmaPlayingRef BEFORE calling playVRMA so the animate loop
       // starts updating the mixer on the very next frame.

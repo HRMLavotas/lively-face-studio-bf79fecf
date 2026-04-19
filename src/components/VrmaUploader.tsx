@@ -31,8 +31,12 @@ export default function VrmaUploader({ onFileSelected }: VrmaUploaderProps) {
     <>
       <input ref={inputRef} type="file" accept=".vrma" onChange={handle} className="hidden" />
       <Button
+        type="button"
         variant="outline"
-        onClick={() => inputRef.current?.click()}
+        onClick={(e) => {
+          e.preventDefault();
+          inputRef.current?.click();
+        }}
         className="w-full font-mono text-xs gap-2"
       >
         <Upload className="w-3.5 h-3.5" />

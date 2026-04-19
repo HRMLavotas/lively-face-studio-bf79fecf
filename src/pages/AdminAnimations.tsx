@@ -65,17 +65,37 @@ export default function AdminAnimations() {
   if (!user) return <Navigate to="/auth" replace />;
   if (!isAdmin) return <Navigate to="/app" replace />;
 
+  const waitForVrmReady = async (timeoutMs = 10000): Promise<boolean> => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (viewerRef.current?.isVrmLoaded()) return true;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return false;
+  };
+
   const handleFileSelected = async (file: File, blobUrl: string) => {
     setPreviewFile(file);
     setPreviewUrl(blobUrl);
     if (!name) setName(file.name.replace(/\.vrma$/i, ''));
-    if (!viewerRef.current?.isVrmLoaded()) {
-      toast.warning('Model VRM belum siap. Tunggu model selesai dimuat lalu coba lagi.');
-      return;
-    }
+
     const loadingToast = toast.loading(`Memuat ${file.name}…`);
+
+    // Wait for VRM to finish loading if needed
+    if (!viewerRef.current?.isVrmLoaded()) {
+      toast.loading('Menunggu model VRM siap…', { id: loadingToast });
+      const ready = await waitForVrmReady();
+      if (!ready) {
+        toast.error('Model VRM belum siap. Pastikan model aktif sudah di-set.', {
+          id: loadingToast,
+          duration: 6000,
+        });
+        return;
+      }
+    }
+
     try {
-      await viewerRef.current.playVrmaUrl(blobUrl, { loop, fadeIn: 0.3 });
+      await viewerRef.current!.playVrmaUrl(blobUrl, { loop, fadeIn: 0.3 });
       toast.success('Preview animasi berjalan', { id: loadingToast });
     } catch (e) {
       const msg = (e as Error).message;
