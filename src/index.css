@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 6%;
+    --foreground: 210 20% 92%;
+    --card: 220 18% 10%;
+    --card-foreground: 210 20% 92%;
+    --popover: 220 18% 10%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 172 66% 50%;
+    --primary-foreground: 220 20% 6%;
+    --secondary: 220 16% 16%;
+    --secondary-foreground: 210 20% 85%;
+    --muted: 220 14% 14%;
+    --muted-foreground: 215 12% 55%;
+    --accent: 260 60% 60%;
+    --accent-foreground: 210 20% 95%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 16% 18%;
+    --input: 220 16% 18%;
+    --ring: 172 66% 50%;
+    --radius: 0.75rem;
+
+    --glow-primary: 172 66% 50%;
+    --glow-accent: 260 60% 60%;
+
+    --sidebar-background: 220 18% 8%;
+    --sidebar-foreground: 210 20% 85%;
+    --sidebar-primary: 172 66% 50%;
+    --sidebar-primary-foreground: 220 20% 6%;
+    --sidebar-accent: 220 14% 14%;
+    --sidebar-accent-foreground: 210 20% 85%;
+    --sidebar-border: 220 16% 18%;
+    --sidebar-ring: 172 66% 50%;
+
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+  }
+
+  .dark {
+    --background: 220 20% 6%;
+    --foreground: 210 20% 92%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer utilities {
+  .glow-primary {
+    box-shadow: 0 0 20px hsl(var(--glow-primary) / 0.3), 0 0 60px hsl(var(--glow-primary) / 0.1);
+  }
+  .glow-accent {
+    box-shadow: 0 0 20px hsl(var(--glow-accent) / 0.3), 0 0 60px hsl(var(--glow-accent) / 0.1);
+  }
+  .text-glow {
+    text-shadow: 0 0 10px hsl(var(--glow-primary) / 0.5);
+  }
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
