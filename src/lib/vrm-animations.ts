@@ -232,19 +232,18 @@ export function updateIdleMicroGestures(
   const chest = vrm.humanoid.getNormalizedBoneNode('chest');
   const upperChest = vrm.humanoid.getNormalizedBoneNode('upperChest');
 
-  // Reduced amplitudes — previous values combined with a full-body idle clip
-  // looked like the avatar was falling backward.
+  // Very subtle amplitudes — barely perceptible, just enough to feel alive.
   if (spine && !isDriven('spine')) {
-    spine.rotation.z += Math.sin(elapsed * 0.6) * 0.010;       // ~0.57° sway
-    spine.rotation.x += Math.sin(elapsed * 0.45 + 0.7) * 0.003; // ~0.17°
+    spine.rotation.z += Math.sin(elapsed * 0.5) * 0.0035;        // ~0.20° sway
+    spine.rotation.x += Math.sin(elapsed * 0.4 + 0.7) * 0.0015;  // ~0.09°
   }
 
   if (chest && !isDriven('chest')) {
-    chest.rotation.x += Math.sin(elapsed * 1.4) * 0.012;        // ~0.69° breathing
+    chest.rotation.x += Math.sin(elapsed * 1.2) * 0.005;         // ~0.29° breathing
   }
 
   if (upperChest && !isDriven('upperChest')) {
-    upperChest.rotation.x += Math.sin(elapsed * 1.4 + 0.3) * 0.006;
+    upperChest.rotation.x += Math.sin(elapsed * 1.2 + 0.3) * 0.0025;
   }
 }
 
