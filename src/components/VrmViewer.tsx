@@ -181,6 +181,30 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl, loading]);
 
+  // Helper: (re)start the idle VRMA loop if a clip is loaded and nothing else is active.
+  // Called after talking ends or admin preview finishes (since playVRMA uncacheRoots
+  // every previous action including idle).
+  const restartIdleLoop = useCallback(() => {
+    const mixer = mixerRef.current;
+    const clip = idleClipRef.current;
+    if (!mixer || !clip) return;
+    if (vrmaActionRef.current || isTalkingPlayingRef.current) return;
+    try {
+      const action = mixer.clipAction(clip);
+      action.reset();
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.enabled = true;
+      action.weight = 1;
+      action.fadeIn(0.4);
+      action.play();
+      idleActionRef.current = action;
+      vrmaPlayingRef.current = true;
+      console.log('[VRMA Idle] Resumed idle loop');
+    } catch (e) {
+      console.warn('[VRMA Idle] Could not restart idle loop:', e);
+    }
+  }, []);
+
   // ── Play talking VRMA when TTS starts, return to rest when TTS ends ──────
   useEffect(() => {
     const vrm = vrmRef.current;
@@ -323,10 +347,12 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
             returnToRestPose(mixer, vrm, 0.5).then(() => {
               vrmaPlayingRef.current = false;
               vrmaActionRef.current = null;
+              restartIdleLoop();
             });
           } else {
             vrmaPlayingRef.current = false;
             vrmaActionRef.current = null;
+            restartIdleLoop();
           }
           console.log('[VRMA] Playback finished — returning to rest pose');
         }
@@ -340,11 +366,13 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         returnToRestPose(mixerRef.current, vrm, fadeOut).then(() => {
           vrmaPlayingRef.current = false;
           vrmaActionRef.current = null;
+          restartIdleLoop();
         });
       } else {
         stopVRMA(mixerRef.current, fadeOut);
         vrmaPlayingRef.current = false;
         vrmaActionRef.current = null;
+        restartIdleLoop();
       }
     },
   }), []);
@@ -384,7 +412,13 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       if (mixerRef.current && (vrmaPlayingRef.current || isReturnToRestRef.current)) {
         mixerRef.current.update(delta);
       }
-      // No procedural body/arm/idle animations — face-only blendshapes
+
+      // Idle micro-gestures (chest-up only): apply ONLY when not talking and
+      // not in admin manual playback. Layered on top of idle VRMA (head-only).
+      const isManualOrTalking = !!vrmaActionRef.current || isTalkingPlayingRef.current;
+      if (!isManualOrTalking) {
+        updateIdleMicroGestures(elapsed, vrm);
+      }
 
       // Lip sync + expressions ALWAYS run (don't conflict with VRMA bones)
       if (isSpeakingRef.current) {
