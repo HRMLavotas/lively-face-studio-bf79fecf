@@ -8,6 +8,7 @@ import {
   updateLipSync,
   resetMouthExpressions,
   setTargetMood,
+  updateIdleMicroGestures,
 } from '@/lib/vrm-animations';
 import { detectMood } from '@/lib/sentiment';
 import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
