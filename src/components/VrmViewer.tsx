@@ -61,6 +61,9 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const idleClipRef = useRef<THREE.AnimationClip | null>(null);
   const idleActionRef = useRef<THREE.AnimationAction | null>(null);
   const idlePausedForActivityRef = useRef(false);
+  // Bones currently driven by the active VRMA (idle, talking, or admin preview).
+  // Used to skip those bones in procedural micro-gestures so we don't double-add.
+  const activeDrivenBonesRef = useRef<Set<string>>(new Set());
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
