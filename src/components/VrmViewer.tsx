@@ -340,7 +340,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         vrmaPlayingRef.current = false;
         throw new Error('Gagal memulai animasi (mixer tidak siap)');
       }
-      console.log('[VRMA] Playback started, duration:', clip.duration.toFixed(2), 's');
+      activeDrivenBonesRef.current = getClipDrivenBones(clip);
+      console.log('[VRMA] Playback started, duration:', clip.duration.toFixed(2), 's', 'driven bones:', Array.from(activeDrivenBonesRef.current));
 
       // When admin manually plays VRMA, also stop any talking loop
       isTalkingPlayingRef.current = false;
