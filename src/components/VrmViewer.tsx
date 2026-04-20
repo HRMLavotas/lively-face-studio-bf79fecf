@@ -165,7 +165,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           action.play();
           idleActionRef.current = action;
           vrmaPlayingRef.current = true;
-          console.log('[VRMA Idle] Auto-loop started');
+          activeDrivenBonesRef.current = getClipDrivenBones(clip);
+          console.log('[VRMA Idle] Auto-loop started, driven bones:', Array.from(activeDrivenBonesRef.current));
         }
       } catch (e) {
         console.warn('[VRMA Idle] Could not load idle clip:', e);
