@@ -9,6 +9,7 @@ import {
   resetMouthExpressions,
   setTargetMood,
   updateIdleMicroGestures,
+  getClipDrivenBones,
 } from '@/lib/vrm-animations';
 import { detectMood } from '@/lib/sentiment';
 import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
