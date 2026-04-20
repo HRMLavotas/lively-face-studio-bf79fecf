@@ -8,6 +8,7 @@ import {
   updateLipSync,
   resetMouthExpressions,
   setTargetMood,
+  updateIdleMicroGestures,
 } from '@/lib/vrm-animations';
 import { detectMood } from '@/lib/sentiment';
 import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
@@ -54,6 +55,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const talkingClipIndexRef = useRef(0);
   const isTalkingPlayingRef = useRef(false);
   const isReturnToRestRef = useRef(false);
+
+  // Idle (default loop) animation state
+  const idleClipRef = useRef<THREE.AnimationClip | null>(null);
+  const idleActionRef = useRef<THREE.AnimationAction | null>(null);
+  const idlePausedForActivityRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,6 +116,95 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl, loading]);
 
+  // ── Load idle-category VRMA (auto-loop default) ─────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const loadIdleClip = async () => {
+      const vrm = vrmRef.current;
+      const mixer = mixerRef.current;
+      if (!vrm || !mixer) return;
+      try {
+        const { data } = await supabase
+          .from('vrma_animations')
+          .select('file_path,name')
+          .eq('category', 'idle')
+          .eq('is_active', true)
+          .order('name', { ascending: true })
+          .limit(1);
+
+        if (cancelled || !data || data.length === 0) {
+          console.log('[VRMA Idle] No idle clip found in library — micro-gestures only');
+          return;
+        }
+
+        const row = data[0];
+        const { data: urlData } = supabase.storage
+          .from('vrma-animations')
+          .getPublicUrl(row.file_path);
+        if (!urlData?.publicUrl) return;
+
+        const clip = await loadVRMA(urlData.publicUrl, vrm);
+        if (cancelled) return;
+        idleClipRef.current = clip;
+        console.log('[VRMA Idle] Loaded idle clip:', row.name);
+
+        // Auto-play looped idle if nothing else is active
+        const m = mixerRef.current;
+        if (m && !vrmaActionRef.current && !isTalkingPlayingRef.current) {
+          // Use a separate clipAction so we don't trigger the global uncacheRoot in playVRMA
+          const action = m.clipAction(clip);
+          action.reset();
+          action.setLoop(THREE.LoopRepeat, Infinity);
+          action.enabled = true;
+          action.weight = 1;
+          action.fadeIn(0.5);
+          action.play();
+          idleActionRef.current = action;
+          vrmaPlayingRef.current = true;
+          console.log('[VRMA Idle] Auto-loop started');
+        }
+      } catch (e) {
+        console.warn('[VRMA Idle] Could not load idle clip:', e);
+      }
+    };
+    const timer = setTimeout(loadIdleClip, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      const action = idleActionRef.current;
+      if (action) {
+        try { action.stop(); } catch (_) { /* ok */ }
+      }
+      idleActionRef.current = null;
+      idleClipRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelUrl, loading]);
+
+  // Helper: (re)start the idle VRMA loop if a clip is loaded and nothing else is active.
+  // Called after talking ends or admin preview finishes (since playVRMA uncacheRoots
+  // every previous action including idle).
+  const restartIdleLoop = useCallback(() => {
+    const mixer = mixerRef.current;
+    const clip = idleClipRef.current;
+    if (!mixer || !clip) return;
+    if (vrmaActionRef.current || isTalkingPlayingRef.current) return;
+    try {
+      const action = mixer.clipAction(clip);
+      action.reset();
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.enabled = true;
+      action.weight = 1;
+      action.fadeIn(0.4);
+      action.play();
+      idleActionRef.current = action;
+      vrmaPlayingRef.current = true;
+      console.log('[VRMA Idle] Resumed idle loop');
+    } catch (e) {
+      console.warn('[VRMA Idle] Could not restart idle loop:', e);
+    }
+  }, []);
+
   // ── Play talking VRMA when TTS starts, return to rest when TTS ends ──────
   useEffect(() => {
     const vrm = vrmRef.current;
@@ -163,7 +258,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           returnToRestPose(mixer, vrm, 0.6).then(() => {
             vrmaPlayingRef.current = false;
             isReturnToRestRef.current = false;
+            // Restart idle loop after returning to rest
+            restartIdleLoop();
           });
+        } else {
+          restartIdleLoop();
         }
       }
 
@@ -248,10 +347,12 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
             returnToRestPose(mixer, vrm, 0.5).then(() => {
               vrmaPlayingRef.current = false;
               vrmaActionRef.current = null;
+              restartIdleLoop();
             });
           } else {
             vrmaPlayingRef.current = false;
             vrmaActionRef.current = null;
+            restartIdleLoop();
           }
           console.log('[VRMA] Playback finished — returning to rest pose');
         }
@@ -265,11 +366,13 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         returnToRestPose(mixerRef.current, vrm, fadeOut).then(() => {
           vrmaPlayingRef.current = false;
           vrmaActionRef.current = null;
+          restartIdleLoop();
         });
       } else {
         stopVRMA(mixerRef.current, fadeOut);
         vrmaPlayingRef.current = false;
         vrmaActionRef.current = null;
+        restartIdleLoop();
       }
     },
   }), []);
@@ -309,7 +412,13 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       if (mixerRef.current && (vrmaPlayingRef.current || isReturnToRestRef.current)) {
         mixerRef.current.update(delta);
       }
-      // No procedural body/arm/idle animations — face-only blendshapes
+
+      // Idle micro-gestures (chest-up only): apply ONLY when not talking and
+      // not in admin manual playback. Layered on top of idle VRMA (head-only).
+      const isManualOrTalking = !!vrmaActionRef.current || isTalkingPlayingRef.current;
+      if (!isManualOrTalking) {
+        updateIdleMicroGestures(elapsed, vrm);
+      }
 
       // Lip sync + expressions ALWAYS run (don't conflict with VRMA bones)
       if (isSpeakingRef.current) {

@@ -202,3 +202,43 @@ export function resetMouthExpressions(vrm: VRM): void {
   _smoothedMouth = 0;
   _shapeTimer = 0;
 }
+
+// ============================================
+// 4. IDLE MICRO BODY GESTURES (chest-up only)
+// ============================================
+// Subtle breathing + sway applied to spine/chest/upperChest only.
+// Hips and lower body stay completely still. Designed to layer on top of
+// an idle VRMA that only animates head/neck.
+
+/**
+ * Apply procedural micro-gestures to the upper torso so the avatar feels
+ * alive even when the VRMA only moves the head. Call AFTER mixer.update()
+ * and BEFORE vrm.update() in the animate loop.
+ */
+export function updateIdleMicroGestures(elapsed: number, vrm: VRM): void {
+  if (!vrm.humanoid) return;
+
+  const spine = vrm.humanoid.getNormalizedBoneNode('spine');
+  const chest = vrm.humanoid.getNormalizedBoneNode('chest');
+  const upperChest = vrm.humanoid.getNormalizedBoneNode('upperChest');
+
+  // Sway side-to-side via spine Z rotation (~0.86°)
+  if (spine) {
+    const swayZ = Math.sin(elapsed * 0.6) * 0.015;
+    spine.rotation.z += swayZ;
+    // Tiny forward/back sway for organic feel
+    spine.rotation.x += Math.sin(elapsed * 0.45 + 0.7) * 0.006;
+  }
+
+  // Breathing via chest X rotation (~1.4°)
+  if (chest) {
+    const breathX = Math.sin(elapsed * 1.4) * 0.025;
+    chest.rotation.x += breathX;
+  }
+
+  // Secondary breathing on upperChest if present
+  if (upperChest) {
+    const breathX2 = Math.sin(elapsed * 1.4 + 0.3) * 0.012;
+    upperChest.rotation.x += breathX2;
+  }
+}
