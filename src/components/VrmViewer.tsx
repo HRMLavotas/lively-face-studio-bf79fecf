@@ -116,6 +116,71 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl, loading]);
 
+  // ── Load idle-category VRMA (auto-loop default) ─────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const loadIdleClip = async () => {
+      const vrm = vrmRef.current;
+      const mixer = mixerRef.current;
+      if (!vrm || !mixer) return;
+      try {
+        const { data } = await supabase
+          .from('vrma_animations')
+          .select('file_path,name')
+          .eq('category', 'idle')
+          .eq('is_active', true)
+          .order('name', { ascending: true })
+          .limit(1);
+
+        if (cancelled || !data || data.length === 0) {
+          console.log('[VRMA Idle] No idle clip found in library — micro-gestures only');
+          return;
+        }
+
+        const row = data[0];
+        const { data: urlData } = supabase.storage
+          .from('vrma-animations')
+          .getPublicUrl(row.file_path);
+        if (!urlData?.publicUrl) return;
+
+        const clip = await loadVRMA(urlData.publicUrl, vrm);
+        if (cancelled) return;
+        idleClipRef.current = clip;
+        console.log('[VRMA Idle] Loaded idle clip:', row.name);
+
+        // Auto-play looped idle if nothing else is active
+        const m = mixerRef.current;
+        if (m && !vrmaActionRef.current && !isTalkingPlayingRef.current) {
+          // Use a separate clipAction so we don't trigger the global uncacheRoot in playVRMA
+          const action = m.clipAction(clip);
+          action.reset();
+          action.setLoop(THREE.LoopRepeat, Infinity);
+          action.enabled = true;
+          action.weight = 1;
+          action.fadeIn(0.5);
+          action.play();
+          idleActionRef.current = action;
+          vrmaPlayingRef.current = true;
+          console.log('[VRMA Idle] Auto-loop started');
+        }
+      } catch (e) {
+        console.warn('[VRMA Idle] Could not load idle clip:', e);
+      }
+    };
+    const timer = setTimeout(loadIdleClip, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      const action = idleActionRef.current;
+      if (action) {
+        try { action.stop(); } catch (_) { /* ok */ }
+      }
+      idleActionRef.current = null;
+      idleClipRef.current = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelUrl, loading]);
+
   // ── Play talking VRMA when TTS starts, return to rest when TTS ends ──────
   useEffect(() => {
     const vrm = vrmRef.current;
