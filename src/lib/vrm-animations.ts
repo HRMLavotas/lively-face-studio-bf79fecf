@@ -214,31 +214,77 @@ export function resetMouthExpressions(vrm: VRM): void {
  * Apply procedural micro-gestures to the upper torso so the avatar feels
  * alive even when the VRMA only moves the head. Call AFTER mixer.update()
  * and BEFORE vrm.update() in the animate loop.
+ *
+ * @param drivenBones Set of normalized bone names that the active VRMA clip
+ *   already animates. Those bones will be SKIPPED so we don't double-add
+ *   rotations on top of the clip (which causes the avatar to fall backward).
  */
-export function updateIdleMicroGestures(elapsed: number, vrm: VRM): void {
+export function updateIdleMicroGestures(
+  elapsed: number,
+  vrm: VRM,
+  drivenBones?: Set<string>,
+): void {
   if (!vrm.humanoid) return;
+
+  const isDriven = (name: string) => !!drivenBones?.has(name);
 
   const spine = vrm.humanoid.getNormalizedBoneNode('spine');
   const chest = vrm.humanoid.getNormalizedBoneNode('chest');
   const upperChest = vrm.humanoid.getNormalizedBoneNode('upperChest');
 
-  // Sway side-to-side via spine Z rotation (~0.86°)
-  if (spine) {
-    const swayZ = Math.sin(elapsed * 0.6) * 0.015;
-    spine.rotation.z += swayZ;
-    // Tiny forward/back sway for organic feel
-    spine.rotation.x += Math.sin(elapsed * 0.45 + 0.7) * 0.006;
+  // Reduced amplitudes — previous values combined with a full-body idle clip
+  // looked like the avatar was falling backward.
+  if (spine && !isDriven('spine')) {
+    spine.rotation.z += Math.sin(elapsed * 0.6) * 0.010;       // ~0.57° sway
+    spine.rotation.x += Math.sin(elapsed * 0.45 + 0.7) * 0.003; // ~0.17°
   }
 
-  // Breathing via chest X rotation (~1.4°)
-  if (chest) {
-    const breathX = Math.sin(elapsed * 1.4) * 0.025;
-    chest.rotation.x += breathX;
+  if (chest && !isDriven('chest')) {
+    chest.rotation.x += Math.sin(elapsed * 1.4) * 0.012;        // ~0.69° breathing
   }
 
-  // Secondary breathing on upperChest if present
-  if (upperChest) {
-    const breathX2 = Math.sin(elapsed * 1.4 + 0.3) * 0.012;
-    upperChest.rotation.x += breathX2;
+  if (upperChest && !isDriven('upperChest')) {
+    upperChest.rotation.x += Math.sin(elapsed * 1.4 + 0.3) * 0.006;
   }
+}
+
+/**
+ * Inspect an AnimationClip and return the set of normalized humanoid bone
+ * names it animates. Track names from VRMA loader look like
+ * "Normalized_J_Bip_C_Spine.quaternion" — we map them back to humanoid names
+ * like "spine", "chest", "upperChest", "hips", etc.
+ */
+export function getClipDrivenBones(clip: { tracks: { name: string }[] }): Set<string> {
+  const out = new Set<string>();
+  // Map J_Bip naming → VRM humanoid bone names
+  const map: Record<string, string> = {
+    'C_Hips': 'hips',
+    'C_Spine': 'spine',
+    'C_Chest': 'chest',
+    'C_UpperChest': 'upperChest',
+    'C_Neck': 'neck',
+    'C_Head': 'head',
+    'L_Shoulder': 'leftShoulder',
+    'R_Shoulder': 'rightShoulder',
+    'L_UpperArm': 'leftUpperArm',
+    'R_UpperArm': 'rightUpperArm',
+    'L_LowerArm': 'leftLowerArm',
+    'R_LowerArm': 'rightLowerArm',
+    'L_Hand': 'leftHand',
+    'R_Hand': 'rightHand',
+    'L_UpperLeg': 'leftUpperLeg',
+    'R_UpperLeg': 'rightUpperLeg',
+    'L_LowerLeg': 'leftLowerLeg',
+    'R_LowerLeg': 'rightLowerLeg',
+    'L_Foot': 'leftFoot',
+    'R_Foot': 'rightFoot',
+  };
+  for (const track of clip.tracks) {
+    // e.g. "Normalized_J_Bip_C_Spine.quaternion"
+    const m = track.name.match(/J_Bip_([A-Z]_[A-Za-z]+)/);
+    if (m && map[m[1]]) {
+      out.add(map[m[1]]);
+    }
+  }
+  return out;
 }
