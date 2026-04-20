@@ -240,8 +240,8 @@ export function updateIdleMicroGestures(
   }
 
   // Breathing halus di dada.
-  const breathX = Math.sin(elapsed * 1.1) * 0.0021;
-  const breathUpperX = Math.sin(elapsed * 1.1 + 0.3) * 0.001;
+  const breathX = Math.sin(elapsed * 0.7) * 0.0013;
+  const breathUpperX = Math.sin(elapsed * 0.7 + 0.3) * 0.0007;
 
   if (chest && !isDriven('chest')) {
     chest.rotation.x += breathX;
