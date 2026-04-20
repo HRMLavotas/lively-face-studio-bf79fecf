@@ -239,6 +239,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         vrmaPlayingRef.current = true;
         const action = playVRMA(mixer, clip, { loop: false, fadeIn: 0.3 });
         if (!action) { vrmaPlayingRef.current = false; return; }
+        activeDrivenBonesRef.current = getClipDrivenBones(clip);
 
         // When this clip ends, play next (loop through talking clips)
         const onFinished = (e: { action: THREE.AnimationAction }) => {
