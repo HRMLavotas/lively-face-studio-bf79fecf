@@ -105,27 +105,30 @@ export default function Index() {
     };
   }, [user?.id]);
 
-  const handleSpeakStart = useCallback((audioUrl: string, messageText?: string) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.pause();
-    audio.src = audioUrl;
-    if (messageText) {
-      setSpokenMessage(messageText);
-      // Multilingual gesture trigger from AI reply (runs alongside talking loop).
-      const match = findMatch(messageText, userLangPref);
-      if (match && viewerRef.current?.isVrmLoaded()) {
-        console.log(
-          `[Trigger] AI → "${match.matchedKeyword}" (${match.matchedLang}) → ${match.clip.name}`,
-        );
-        viewerRef.current
-          .playVrmaUrl(match.url, { loop: false, fadeIn: 0.3 })
-          .catch((e) => console.warn('[Trigger] play failed:', e));
+  const handleSpeakStart = useCallback(
+    (audioUrl: string, messageText?: string) => {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.pause();
+      audio.src = audioUrl;
+      if (messageText) {
+        setSpokenMessage(messageText);
+        // Multilingual gesture trigger from AI reply (runs alongside talking loop).
+        const match = findMatch(messageText, userLangPref);
+        if (match && viewerRef.current?.isVrmLoaded()) {
+          console.log(
+            `[Trigger] AI → "${match.matchedKeyword}" (${match.matchedLang}) → ${match.clip.name}`,
+          );
+          viewerRef.current
+            .playVrmaUrl(match.url, { loop: false, fadeIn: 0.3 })
+            .catch((e) => console.warn('[Trigger] play failed:', e));
+        }
       }
-    }
-    setIsSpeaking(true);
-    audio.play().catch(() => setIsSpeaking(false));
-  }, []);
+      setIsSpeaking(true);
+      audio.play().catch(() => setIsSpeaking(false));
+    },
+    [findMatch, userLangPref],
+  );
 
   const handleSpeakEnd = useCallback(() => {
     const audio = audioRef.current;
@@ -134,34 +137,16 @@ export default function Index() {
   }, []);
 
   // When user sends a message, immediately set a sympathetic / matching mood
-  // so the avatar reacts BEFORE the AI replies (e.g. user says "ibu meninggal"
-  // → avatar already looks sympathetic by the time the response renders).
+  // AND check for multilingual VRMA keyword trigger.
   const handleUserMessage = useCallback(
     (text: string) => {
       const mood = detectMood(text);
       if (mood !== 'neutral') setTargetMood(mood);
 
-      // Multilingual gesture trigger from user input.
       const match = findMatch(text, userLangPref);
       if (match && viewerRef.current?.isVrmLoaded()) {
         console.log(
           `[Trigger] User → "${match.matchedKeyword}" (${match.matchedLang}) → ${match.clip.name}`,
-        );
-        viewerRef.current
-          .playVrmaUrl(match.url, { loop: false, fadeIn: 0.3 })
-          .catch((e) => console.warn('[Trigger] play failed:', e));
-      }
-    },
-    [findMatch, userLangPref],
-  );
-
-  // AI reply text — check for keyword match before/while TTS plays.
-  const handleAssistantMessage = useCallback(
-    (text: string) => {
-      const match = findMatch(text, userLangPref);
-      if (match && viewerRef.current?.isVrmLoaded()) {
-        console.log(
-          `[Trigger] AI → "${match.matchedKeyword}" (${match.matchedLang}) → ${match.clip.name}`,
         );
         viewerRef.current
           .playVrmaUrl(match.url, { loop: false, fadeIn: 0.3 })
