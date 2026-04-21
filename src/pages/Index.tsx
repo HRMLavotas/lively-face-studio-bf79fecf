@@ -10,6 +10,9 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { detectMood } from '@/lib/sentiment';
 import { setTargetMood } from '@/lib/vrm-animations';
+import { useVrmaTriggers } from '@/hooks/useVrmaTriggers';
+import type { VrmViewerHandle } from '@/components/VrmViewer';
+import type { LangCode } from '@/lib/lang-detect';
 
 const VrmViewer = lazy(() => import('@/components/VrmViewer'));
 
@@ -31,6 +34,15 @@ export default function Index() {
   // a MediaElementAudioSourceNode ONCE per AudioContext lifetime, so reusing
   // the same element keeps lip sync working across every message.
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const viewerRef = useRef<VrmViewerHandle>(null);
+
+  // Multilingual VRMA trigger matcher (loads keywords for all active clips)
+  const { findMatch } = useVrmaTriggers();
+  // User language preference (auto = null → detect from text). localStorage key.
+  const userLangPref =
+    (typeof window !== 'undefined'
+      ? (localStorage.getItem('vrm.lang') as LangCode | null)
+      : null) || null;
   if (audioRef.current === null && typeof window !== 'undefined') {
     audioRef.current = new Audio();
     audioRef.current.crossOrigin = 'anonymous';
@@ -112,10 +124,40 @@ export default function Index() {
   // When user sends a message, immediately set a sympathetic / matching mood
   // so the avatar reacts BEFORE the AI replies (e.g. user says "ibu meninggal"
   // → avatar already looks sympathetic by the time the response renders).
-  const handleUserMessage = useCallback((text: string) => {
-    const mood = detectMood(text);
-    if (mood !== 'neutral') setTargetMood(mood);
-  }, []);
+  const handleUserMessage = useCallback(
+    (text: string) => {
+      const mood = detectMood(text);
+      if (mood !== 'neutral') setTargetMood(mood);
+
+      // Multilingual gesture trigger from user input.
+      const match = findMatch(text, userLangPref);
+      if (match && viewerRef.current?.isVrmLoaded()) {
+        console.log(
+          `[Trigger] User → "${match.matchedKeyword}" (${match.matchedLang}) → ${match.clip.name}`,
+        );
+        viewerRef.current
+          .playVrmaUrl(match.url, { loop: false, fadeIn: 0.3 })
+          .catch((e) => console.warn('[Trigger] play failed:', e));
+      }
+    },
+    [findMatch, userLangPref],
+  );
+
+  // AI reply text — check for keyword match before/while TTS plays.
+  const handleAssistantMessage = useCallback(
+    (text: string) => {
+      const match = findMatch(text, userLangPref);
+      if (match && viewerRef.current?.isVrmLoaded()) {
+        console.log(
+          `[Trigger] AI → "${match.matchedKeyword}" (${match.matchedLang}) → ${match.clip.name}`,
+        );
+        viewerRef.current
+          .playVrmaUrl(match.url, { loop: false, fadeIn: 0.3 })
+          .catch((e) => console.warn('[Trigger] play failed:', e));
+      }
+    },
+    [findMatch, userLangPref],
+  );
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background flex">
@@ -132,6 +174,7 @@ export default function Index() {
           }
         >
           <VrmViewer
+            ref={viewerRef}
             modelUrl={modelUrl}
             isSpeaking={isSpeaking}
             audioElement={audioEl}
