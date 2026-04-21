@@ -110,7 +110,19 @@ export default function Index() {
     if (!audio) return;
     audio.pause();
     audio.src = audioUrl;
-    if (messageText) setSpokenMessage(messageText);
+    if (messageText) {
+      setSpokenMessage(messageText);
+      // Multilingual gesture trigger from AI reply (runs alongside talking loop).
+      const match = findMatch(messageText, userLangPref);
+      if (match && viewerRef.current?.isVrmLoaded()) {
+        console.log(
+          `[Trigger] AI → "${match.matchedKeyword}" (${match.matchedLang}) → ${match.clip.name}`,
+        );
+        viewerRef.current
+          .playVrmaUrl(match.url, { loop: false, fadeIn: 0.3 })
+          .catch((e) => console.warn('[Trigger] play failed:', e));
+      }
+    }
     setIsSpeaking(true);
     audio.play().catch(() => setIsSpeaking(false));
   }, []);
