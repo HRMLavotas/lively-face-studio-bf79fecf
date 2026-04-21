@@ -1,58 +1,142 @@
 
 
-## Plan: Default idle VRMA loop + micro body movement (chest up only)
+## Plan: Multilingual VRMA library + auto-trigger (Asia + International)
 
 ### Tujuan
-Avatar utama tidak terlihat statis. Tambahkan:
-1. **Default idle VRMA** auto-loop (kategori `idle`, gerakan kepala ringan dari library).
-2. **Micro body gesture prosedural** — sway kiri-kanan halus + breathing (naik-turun dada) **hanya dari pinggang/spine ke atas**. Pinggul, kaki, dan posisi root tetap diam.
+Perluas sistem keyword & trigger animasi agar mendukung pasar Asia (ID, EN, JP, KR, ZH, TH, VI) dengan deteksi otomatis dari teks chat, baik input user maupun balasan AI.
 
-### Strategi
+### Bagian 1 — Public access VRMA library (prasyarat)
+Tambah RLS policy SELECT publik di `vrma_animations` agar semua user (login/guest) bisa membaca animasi `is_active=true`. Tanpa ini, fitur multilingual tidak akan jalan untuk non-admin.
 
-**A. Database (pakai data existing)**
-- Sudah ada tabel `vrma_animations` dengan kolom `category`. Pakai kategori `idle` untuk filter.
-- Asumsi user sudah upload VRMA bernama "idle gerakan kepala" lewat Animation Studio dengan category=idle. Plan ini hanya code — tidak ada migration baru.
-- Jika belum ada VRMA idle di library, micro-gesture prosedural tetap jalan sebagai fallback.
+```sql
+CREATE POLICY "Public can view active animations"
+  ON public.vrma_animations FOR SELECT USING (is_active = true);
+```
 
-**B. `src/components/VrmViewer.tsx`**
-- Tambah loader baru (mirip pola talking clips) untuk query `vrma_animations` dengan `category='idle'`, ambil clip pertama, simpan di `idleClipRef`.
-- Tambah `idleActionRef` untuk action loop-nya.
-- **Auto-play idle**: setelah VRM loaded + idle clip loaded → `playVRMA(mixer, clip, { loop: true, fadeIn: 0.5 })`. 
-- **Pause idle saat ada aktivitas lain**: kalau `vrmaActionRef` (admin preview) atau talking VRMA aktif → fade out idle. Saat selesai → fade idle balik in.
-- **Cleanup**: stop idle action saat unmount.
+### Bagian 2 — Skema keyword multilingual
 
-**C. Micro body gesture prosedural (di `vrm-animations.ts`)**
-Tambah fungsi baru `updateIdleMicroGestures(elapsed, vrm)`:
-- Target bones via `vrm.humanoid.getNormalizedBoneNode()`:
-  - `spine` — sway kiri-kanan: `rotation.z = sin(elapsed * 0.6) * 0.015` (~0.86°)
-  - `chest` — breathing: `rotation.x = sin(elapsed * 1.4) * 0.025` (naik-turun halus, ~1.4°), kombinasi sedikit `position.y` offset dihindari (jaga rig stabil — pakai rotasi saja)
-  - `upperChest` (jika ada) — tambahan breathing kecil `rotation.x = sin(elapsed * 1.4 + 0.3) * 0.012`
-  - **JANGAN sentuh**: `hips`, `upperLeg`, `lowerLeg`, `foot`, root scene position. Pinggang ke bawah benar-benar diam.
-- **Additive ke VRMA**: panggil micro-gesture **SETELAH** `mixer.update(delta)` dan **SEBELUM** `vrm.update(delta)`. Karena idle VRMA "gerakan kepala" hanya sentuh head/neck, micro-gesture pada spine/chest tidak konflik. Untuk safety, hanya tambahkan ke `rotation` axis yang tidak di-drive VRMA (cek bone names di clip → kemungkinan besar hanya head/neck).
-- **Skip saat speaking VRMA atau admin preview aktif** (agar talking clips di chest/spine tidak ditimpa) — gate via flag `vrmaActionRef.current` & `isTalkingPlayingRef.current`.
+Daripada mencampur semua bahasa di satu array `trigger_keywords` (sulit di-maintain), tambah kolom JSONB baru `trigger_keywords_i18n`:
 
-**D. Integrasi di animate loop (`VrmViewer.tsx`)**
-Setelah `mixerRef.current.update(delta)`:
-```ts
-const isManualOrTalking = vrmaActionRef.current || isTalkingPlayingRef.current;
-if (!isManualOrTalking) {
-  updateIdleMicroGestures(elapsed, vrm);
+```sql
+ALTER TABLE public.vrma_animations
+  ADD COLUMN trigger_keywords_i18n jsonb NOT NULL DEFAULT '{}'::jsonb;
+```
+
+Struktur per baris:
+```json
+{
+  "id": ["halo", "hai", "selamat pagi"],
+  "en": ["hello", "hi", "good morning"],
+  "ja": ["こんにちは", "やあ", "おはよう"],
+  "ko": ["안녕", "안녕하세요"],
+  "zh": ["你好", "嗨", "早上好"],
+  "th": ["สวัสดี", "หวัดดี"],
+  "vi": ["xin chào", "chào"]
 }
 ```
 
+Kolom `trigger_keywords` (text[]) lama tetap dipertahankan sebagai **fallback agregat** (semua bahasa di-flatten) untuk backward compatibility dengan kode existing.
+
+### Bagian 3 — Data: keyword multilingual untuk 119 VRMA
+
+Generate UPDATE batch untuk semua VRMA berdasar nama (English source). Untuk setiap clip, set 7 bahasa: ID, EN, JA, KO, ZH, TH, VI. Contoh:
+
+| VRMA | Kategori | Bahasa → Keywords |
+|---|---|---|
+| Waving / Standing Greeting | greeting | id: halo,hai,dadah · en: hello,hi,bye · ja: こんにちは,やあ,さようなら · ko: 안녕,안녕히가세요 · zh: 你好,嗨,再见 · th: สวัสดี,ลาก่อน · vi: xin chào,tạm biệt |
+| Thankful | emote | id: terima kasih,makasih · en: thanks,thank you · ja: ありがとう,どうも · ko: 고마워,감사합니다 · zh: 谢谢 · th: ขอบคุณ · vi: cảm ơn |
+| Thinking | gesture | id: hmm,mikir,sebentar · en: hmm,thinking,let me think · ja: えっと,うーん,ちょっと待って · ko: 음,잠깐만 · zh: 嗯,想想,等等 · th: อืม,คิดดู · vi: hmm,để tôi nghĩ |
+| Shaking Head No | gesture | id: tidak,jangan · en: no,don't · ja: いいえ,だめ · ko: 아니,안돼 · zh: 不,不要 · th: ไม่ · vi: không |
+| Surprise | reaction | id: wah,kaget,astaga · en: wow,omg,surprised · ja: わあ,びっくり,えっ · ko: 와,깜짝이야 · zh: 哇,天啊 · th: ว้าว,ตกใจ · vi: ồ,ngạc nhiên |
+| Angry | reaction | id: marah,kesal · en: angry,mad · ja: 怒る,むかつく · ko: 화나,짜증 · zh: 生气,气死了 · th: โกรธ · vi: tức giận |
+| Cheering / Victory | emote | id: hore,mantap,menang · en: yay,awesome,victory · ja: やった,すごい,勝った · ko: 야호,대박,이겼다 · zh: 太棒了,赢了 · th: เย่,เจ๋ง · vi: tuyệt,thắng rồi |
+| Pointing | gesture | id: itu,lihat,sana · en: there,look,that · ja: あれ,見て,そこ · ko: 저기,봐 · zh: 那个,看 · th: นั่น,ดู · vi: kia,nhìn |
+| Salute | gesture | id: hormat,siap · en: salute,sir · ja: 敬礼 · ko: 경례 · zh: 敬礼 · th: เคารพ · vi: chào |
+
+Total ~119 UPDATE statements, dijalankan via insert tool. Setiap update juga refresh `trigger_keywords` (flatten array) untuk fallback.
+
+### Bagian 4 — Hook `useVrmaTriggers.ts` (multilingual matcher)
+
+```ts
+// Pseudocode
+const animations = await loadActiveAnimations(); // includes trigger_keywords_i18n
+
+function findMatch(text: string, lang?: string): MatchedClip | null {
+  const lower = text.toLowerCase().normalize('NFC');
+  
+  for (const anim of orderedByPriority(animations)) {
+    const i18n = anim.trigger_keywords_i18n;
+    // Strategy: cek bahasa yang terdeteksi dulu, lalu fallback ke semua bahasa
+    const langsToCheck = lang ? [lang, ...OTHER_LANGS] : ALL_LANGS;
+    
+    for (const l of langsToCheck) {
+      const keywords = i18n[l] ?? [];
+      for (const kw of keywords) {
+        if (matchKeyword(lower, kw, l)) return { anim, matchedLang: l };
+      }
+    }
+  }
+  return null;
+}
+```
+
+**Matching strategy per bahasa:**
+- **Latin scripts (id, en, vi)**: word-boundary regex `\b{kw}\b` (case-insensitive).
+- **CJK (ja, ko, zh)**: substring match (no word boundary — CJK tidak pakai spasi). Normalisasi NFC.
+- **Thai**: substring match (Thai juga tanpa spasi antar kata).
+
+**Language detection (optional, ringan):**
+- Deteksi script via Unicode range:
+  - `/[\u3040-\u30FF]/` → Japanese (hiragana/katakana)
+  - `/[\uAC00-\uD7AF]/` → Korean
+  - `/[\u4E00-\u9FFF]/` → Chinese (or Japanese kanji)
+  - `/[\u0E00-\u0E7F]/` → Thai
+  - default Latin → fallback ke ID + EN + VI
+- Tidak perlu library berat; kalau ambigu (CJK kanji) → cek semua bahasa.
+
+### Bagian 5 — UI Animation Studio (admin)
+
+Update `VrmaLibrary.tsx` & `VrmaUploader.tsx`:
+- Edit mode: ganti single textarea "keywords" jadi **tabs per bahasa** (ID, EN, JA, KO, ZH, TH, VI), masing-masing punya input keyword comma-separated.
+- Saat save: build object `{ id: [...], en: [...], ... }` → simpan ke `trigger_keywords_i18n`. Auto-generate `trigger_keywords` flat sebagai union semua bahasa.
+- View mode: tampilkan badge kecil per bahasa dengan jumlah keyword, contoh: `ID(3) EN(2) JA(2)`.
+
+### Bagian 6 — Integrasi ke chat flow (`Index.tsx`)
+
+- User kirim pesan → `findMatch(userText)` → kalau ada, play VRMA gesture (override talking loop sementara).
+- AI reply → `findMatch(aiText)` sebelum TTS mulai. Match → prioritaskan gesture clip. Tidak match → fallback ke talking loop.
+- Prioritas kategori: `greeting > reaction > emote > gesture > talking > idle`.
+
+### Bagian 7 — UI bahasa user (opsional, lightweight)
+
+Tambah selector di Settings: "Bahasa interaksi" (auto-detect / ID / EN / JA / KO / ZH / TH / VI). Disimpan di localStorage. `findMatch` pakai bahasa ini sebagai prioritas. Default: auto-detect dari teks.
+
 ### File yang diubah
-- `src/lib/vrm-animations.ts` — tambah `updateIdleMicroGestures` + state.
-- `src/components/VrmViewer.tsx`:
-  - Tambah `idleClipRef`, `idleActionRef`.
-  - Loader idle clip dari Supabase (similar to talking loader).
-  - Auto-play loop saat ready + pause/resume sesuai aktivitas.
-  - Panggil `updateIdleMicroGestures` di animate loop.
-  - Import fungsi baru.
+
+**Migration (schema)**:
+- Add column `trigger_keywords_i18n jsonb` ke `vrma_animations`.
+- Add public SELECT RLS policy.
+
+**Data (insert tool, batch)**:
+- ~119 UPDATE statements untuk isi `trigger_keywords_i18n` + refresh `trigger_keywords`.
+
+**Code**:
+- `src/hooks/useVrmaTriggers.ts` (baru) — multilingual matcher + script detection.
+- `src/lib/lang-detect.ts` (baru) — Unicode-range based language hint.
+- `src/components/VrmaLibrary.tsx` — UI tabs per bahasa untuk edit keyword.
+- `src/components/VrmaUploader.tsx` — input multilingual saat upload baru.
+- `src/pages/Index.tsx` — wire trigger ke chat flow.
+- `src/components/VrmViewer.tsx` — expose `playVrmaUrl()` untuk gesture override + balik ke talking/idle setelah selesai.
+- `src/integrations/supabase/types.ts` — auto-regenerate (tidak perlu manual edit).
 
 ### Hasil yang diharapkan
-- Avatar default loop animasi kepala VRMA + sway halus spine + breathing chest.
-- Pinggul ke kaki benar-benar diam (tidak ada gerakan kaki/pinggul).
-- Saat user chat → talking VRMA take over (idle pause). Saat selesai → idle resume.
-- Saat admin preview VRMA → idle pause sampai preview selesai.
-- Tidak ada perubahan database / RLS / UI.
+
+1. ✅ Library VRMA bisa diakses semua user (admin + free + guest).
+2. ✅ Setiap animasi punya keyword di 7 bahasa Asia + English.
+3. ✅ Avatar otomatis trigger gesture sesuai konteks chat dalam bahasa apapun:
+   - "Hello!" / "こんにちは" / "안녕" / "你好" / "สวัสดี" → wave.
+   - "Thank you" / "ありがとう" / "감사합니다" / "谢谢" → thankful.
+   - "Hmm let me think" / "えっと" / "嗯..." → thinking.
+4. ✅ Admin bisa edit keyword per bahasa lewat UI tabs di Animation Studio.
+5. ✅ Backward compatible: kolom `trigger_keywords` lama tetap terisi sebagai fallback flatten.
 
