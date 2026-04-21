@@ -51,27 +51,44 @@ interface VrmaLibraryProps {
 interface EditState {
   name: string;
   category: string;
-  keywords: string;
+  keywordsByLang: Record<LangCode, string>;
 }
+
+const emptyKeywordsByLang = (): Record<LangCode, string> =>
+  ({ id: '', en: '', ja: '', ko: '', zh: '', th: '', vi: '' });
 
 export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
   const [items, setItems] = useState<VrmaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editState, setEditState] = useState<EditState>({ name: '', category: '', keywords: '' });
+  const [editState, setEditState] = useState<EditState>({
+    name: '',
+    category: '',
+    keywordsByLang: emptyKeywordsByLang(),
+  });
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('vrma_animations')
-      .select('id, name, file_path, file_name, category, trigger_keywords, is_active')
+      .select('id, name, file_path, file_name, category, trigger_keywords, trigger_keywords_i18n, is_active')
       .order('category', { ascending: true })
       .order('name', { ascending: true });
     if (error) {
       toast.error('Gagal memuat library');
     } else {
-      setItems(data ?? []);
+      const mapped: VrmaItem[] = (data ?? []).map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        file_path: d.file_path,
+        file_name: d.file_name,
+        category: d.category,
+        trigger_keywords: d.trigger_keywords ?? [],
+        trigger_keywords_i18n: (d.trigger_keywords_i18n ?? {}) as Partial<Record<LangCode, string[]>>,
+        is_active: d.is_active,
+      }));
+      setItems(mapped);
     }
     setLoading(false);
   };
@@ -108,11 +125,11 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
 
   const startEdit = (item: VrmaItem) => {
     setEditingId(item.id);
-    setEditState({
-      name: item.name,
-      category: item.category,
-      keywords: item.trigger_keywords.join(', '),
-    });
+    const kbl = emptyKeywordsByLang();
+    for (const lang of LANGS) {
+      kbl[lang] = (item.trigger_keywords_i18n[lang] ?? []).join(', ');
+    }
+    setEditState({ name: item.name, category: item.category, keywordsByLang: kbl });
   };
 
   const cancelEdit = () => {
@@ -125,17 +142,29 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
       return;
     }
     setSaving(true);
-    const trigger_keywords = editState.keywords
-      .split(',')
-      .map((k) => k.trim().toLowerCase())
-      .filter(Boolean);
+
+    const i18n: Partial<Record<LangCode, string[]>> = {};
+    const flat: string[] = [];
+    const seen = new Set<string>();
+    for (const lang of LANGS) {
+      const arr = (editState.keywordsByLang[lang] ?? '')
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean);
+      i18n[lang] = arr;
+      for (const k of arr) {
+        const key = k.toLowerCase();
+        if (!seen.has(key)) { seen.add(key); flat.push(k); }
+      }
+    }
 
     const { error } = await supabase
       .from('vrma_animations')
       .update({
         name: editState.name.trim(),
         category: editState.category,
-        trigger_keywords,
+        trigger_keywords: flat,
+        trigger_keywords_i18n: i18n as any,
       })
       .eq('id', item.id);
 
