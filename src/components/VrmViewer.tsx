@@ -58,10 +58,15 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const isTalkingPlayingRef = useRef(false);
   const isReturnToRestRef = useRef(false);
 
-  // Idle (default loop) animation state
-  const idleClipRef = useRef<THREE.AnimationClip | null>(null);
+  // Idle (default loop) animation state — multi-clip rotation
+  const idleClipsRef = useRef<THREE.AnimationClip[]>([]);          // all loaded idle clips
+  const idleClipRef = useRef<THREE.AnimationClip | null>(null);    // currently-active idle clip
   const idleActionRef = useRef<THREE.AnimationAction | null>(null);
   const idlePausedForActivityRef = useRef(false);
+  const idleLoopCountRef = useRef(0);      // how many loops have completed for current idle clip
+  const idleCurrentIndexRef = useRef(0);   // index of currently-playing idle clip
+  // How many loops before switching to the next idle clip (randomised per switch)
+  const idleLoopsBeforeSwitchRef = useRef(3);
   // Bones currently driven by the active VRMA (idle, talking, or admin preview).
   // Used to skip those bones in procedural micro-gestures so we don't double-add.
   const activeDrivenBonesRef = useRef<Set<string>>(new Set());
@@ -121,10 +126,10 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl, loading]);
 
-  // ── Load idle-category VRMA (auto-loop default) ─────────────────────────
+  // ── Load ALL idle-category VRMA clips (auto-loop with rotation) ─────────
   useEffect(() => {
     let cancelled = false;
-    const loadIdleClip = async () => {
+    const loadIdleClips = async () => {
       const vrm = vrmRef.current;
       const mixer = mixerRef.current;
       if (!vrm || !mixer) return;
@@ -134,30 +139,54 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           .select('file_path,name')
           .eq('category', 'idle')
           .eq('is_active', true)
-          .order('name', { ascending: true })
-          .limit(1);
+          .order('name', { ascending: true });
 
         if (cancelled || !data || data.length === 0) {
-          console.log('[VRMA Idle] No idle clip found in library — micro-gestures only');
+          console.log('[VRMA Idle] No idle clips found in library — micro-gestures only');
           return;
         }
 
-        const row = data[0];
-        const { data: urlData } = supabase.storage
-          .from('vrma-animations')
-          .getPublicUrl(row.file_path);
-        if (!urlData?.publicUrl) return;
+        console.log('[VRMA Idle] Loading', data.length, 'idle clip(s)…');
+        const clips: THREE.AnimationClip[] = [];
+        for (const row of data) {
+          try {
+            const { data: urlData } = supabase.storage
+              .from('vrma-animations')
+              .getPublicUrl(row.file_path);
+            if (!urlData?.publicUrl) continue;
+            const clip = await loadVRMA(urlData.publicUrl, vrm);
+            if (!cancelled) {
+              clips.push(clip);
+              console.log('[VRMA Idle] Loaded:', row.name);
+            }
+          } catch (e) {
+            console.warn('[VRMA Idle] Failed to load clip:', e);
+          }
+        }
 
-        const clip = await loadVRMA(urlData.publicUrl, vrm);
-        if (cancelled) return;
-        idleClipRef.current = clip;
-        console.log('[VRMA Idle] Loaded idle clip:', row.name);
+        if (cancelled || clips.length === 0) return;
+
+        // Shuffle so initial order is random
+        for (let i = clips.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [clips[i], clips[j]] = [clips[j], clips[i]];
+        }
+
+        idleClipsRef.current = clips;
+        idleCurrentIndexRef.current = 0;
+        idleLoopCountRef.current = 0;
+        // Randomise first switch threshold: 3–6 loops
+        idleLoopsBeforeSwitchRef.current = 3 + Math.floor(Math.random() * 4);
+
+        const firstClip = clips[0];
+        idleClipRef.current = firstClip;
+        console.log('[VRMA Idle] All clips loaded. Starting with index 0, switch after',
+          idleLoopsBeforeSwitchRef.current, 'loops');
 
         // Auto-play looped idle if nothing else is active
         const m = mixerRef.current;
         if (m && !vrmaActionRef.current && !isTalkingPlayingRef.current) {
-          // Use a separate clipAction so we don't trigger the global uncacheRoot in playVRMA
-          const action = m.clipAction(clip);
+          const action = m.clipAction(firstClip);
           action.reset();
           action.setLoop(THREE.LoopRepeat, Infinity);
           action.enabled = true;
@@ -166,14 +195,14 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           action.play();
           idleActionRef.current = action;
           vrmaPlayingRef.current = true;
-          activeDrivenBonesRef.current = getClipDrivenBones(clip);
-          console.log('[VRMA Idle] Auto-loop started, driven bones:', Array.from(activeDrivenBonesRef.current));
+          activeDrivenBonesRef.current = getClipDrivenBones(firstClip);
+          console.log('[VRMA Idle] Auto-loop started');
         }
       } catch (e) {
-        console.warn('[VRMA Idle] Could not load idle clip:', e);
+        console.warn('[VRMA Idle] Could not load idle clips:', e);
       }
     };
-    const timer = setTimeout(loadIdleClip, 500);
+    const timer = setTimeout(loadIdleClips, 500);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -183,18 +212,22 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       }
       idleActionRef.current = null;
       idleClipRef.current = null;
+      idleClipsRef.current = [];
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl, loading]);
 
-  // Helper: (re)start the idle VRMA loop if a clip is loaded and nothing else is active.
+  // Helper: (re)start the idle VRMA loop. Picks the current idle clip from the pool.
   // Called after talking ends or admin preview finishes (since playVRMA uncacheRoots
   // every previous action including idle).
   const restartIdleLoop = useCallback(() => {
     const mixer = mixerRef.current;
-    const clip = idleClipRef.current;
-    if (!mixer || !clip) return;
+    const clips = idleClipsRef.current;
+    if (!mixer || clips.length === 0) return;
     if (vrmaActionRef.current || isTalkingPlayingRef.current) return;
+
+    const clip = clips[idleCurrentIndexRef.current % clips.length];
+    idleClipRef.current = clip;
     try {
       const action = mixer.clipAction(clip);
       action.reset();
@@ -206,11 +239,120 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       idleActionRef.current = action;
       vrmaPlayingRef.current = true;
       activeDrivenBonesRef.current = getClipDrivenBones(clip);
-      console.log('[VRMA Idle] Resumed idle loop');
+      console.log('[VRMA Idle] Resumed idle loop, clip index:', idleCurrentIndexRef.current);
     } catch (e) {
       console.warn('[VRMA Idle] Could not restart idle loop:', e);
     }
   }, []);
+
+  // ── Idle clip rotation: switch to next idle clip after N loops ───────────
+  // We attach a 'loop' event to the mixer and count completions.
+  // After idleLoopsBeforeSwitchRef loops, we cross-fade to the next random idle clip.
+  const switchIdleClip = useCallback(() => {
+    const mixer = mixerRef.current;
+    const clips = idleClipsRef.current;
+    if (!mixer || clips.length <= 1) return;
+    if (vrmaActionRef.current || isTalkingPlayingRef.current) return;
+
+    // Pick next index — avoid repeating same clip if possible
+    let nextIdx: number;
+    if (clips.length === 2) {
+      nextIdx = idleCurrentIndexRef.current === 0 ? 1 : 0;
+    } else {
+      do {
+        nextIdx = Math.floor(Math.random() * clips.length);
+      } while (nextIdx === idleCurrentIndexRef.current);
+    }
+
+    idleCurrentIndexRef.current = nextIdx;
+    idleLoopCountRef.current = 0;
+    // Randomise next switch threshold: 3–7 loops
+    idleLoopsBeforeSwitchRef.current = 3 + Math.floor(Math.random() * 5);
+
+    const nextClip = clips[nextIdx];
+    idleClipRef.current = nextClip;
+
+    try {
+      // Fade out old action
+      const oldAction = idleActionRef.current;
+      if (oldAction) {
+        oldAction.fadeOut(0.6);
+      }
+
+      // Create & start new action
+      const newAction = mixer.clipAction(nextClip);
+      newAction.reset();
+      newAction.setLoop(THREE.LoopRepeat, Infinity);
+      newAction.enabled = true;
+      newAction.weight = 1;
+      newAction.fadeIn(0.6);
+      newAction.play();
+      idleActionRef.current = newAction;
+      activeDrivenBonesRef.current = getClipDrivenBones(nextClip);
+
+      console.log(
+        `[VRMA Idle] Switched to clip index ${nextIdx}, next switch after`,
+        idleLoopsBeforeSwitchRef.current, 'loops'
+      );
+    } catch (e) {
+      console.warn('[VRMA Idle] Failed to switch idle clip:', e);
+    }
+  }, []);
+
+  // Register mixer 'loop' event listener to count loops and trigger switches.
+  // Re-registers whenever the model changes (mixer changes).
+  useEffect(() => {
+    // The mixer is created during model load (async). We poll with a short
+    // interval until the mixer is available, then attach the listener.
+    let attached = false;
+    let intervalId: ReturnType<typeof setInterval>;
+
+    const attachListener = () => {
+      const mixer = mixerRef.current;
+      if (!mixer) return;
+      if (attached) return;
+      attached = true;
+      clearInterval(intervalId);
+
+      const onLoop = (e: { action: THREE.AnimationAction }) => {
+        // Only count loops for the active idle action
+        if (e.action !== idleActionRef.current) return;
+        if (vrmaActionRef.current || isTalkingPlayingRef.current) return;
+        if (idleClipsRef.current.length <= 1) return;
+
+        idleLoopCountRef.current += 1;
+        console.log(
+          `[VRMA Idle] Loop #${idleLoopCountRef.current} / ${idleLoopsBeforeSwitchRef.current}`
+        );
+        if (idleLoopCountRef.current >= idleLoopsBeforeSwitchRef.current) {
+          switchIdleClip();
+        }
+      };
+
+      mixer.addEventListener('loop', onLoop as (e: object) => void);
+      console.log('[VRMA Idle] Loop event listener attached');
+
+      // Store cleanup on the ref so we can remove it when mixer changes
+      (mixer as unknown as { _tempoLoopHandler?: (e: object) => void })._tempoLoopHandler = onLoop as (e: object) => void;
+    };
+
+    intervalId = setInterval(attachListener, 200);
+    // Try immediately too
+    attachListener();
+
+    return () => {
+      clearInterval(intervalId);
+      const mixer = mixerRef.current;
+      if (mixer) {
+        const handler = (mixer as unknown as { _tempoLoopHandler?: (e: object) => void })._tempoLoopHandler;
+        if (handler) {
+          mixer.removeEventListener('loop', handler);
+          delete (mixer as unknown as { _tempoLoopHandler?: (e: object) => void })._tempoLoopHandler;
+        }
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelUrl, loading, switchIdleClip]);
 
   // ── Play talking VRMA when TTS starts, return to rest when TTS ends ──────
   useEffect(() => {
