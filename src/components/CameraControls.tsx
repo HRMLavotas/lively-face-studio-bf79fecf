@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Move3d } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Camera, Move3d } from 'lucide-react';
 import type { CameraPreset } from '@/components/VrmViewer';
 
 interface CameraControlsProps {
@@ -31,6 +32,7 @@ export default function CameraControls({
   currentPreset,
 }: CameraControlsProps) {
   const [selectedPreset, setSelectedPreset] = useState<CameraPreset>(currentPreset || 'medium-shot');
+  const [isOpen, setIsOpen] = useState(false);
 
   const handlePresetChange = (value: CameraPreset) => {
     if (isFreeMode) {
@@ -45,52 +47,76 @@ export default function CameraControls({
   };
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col gap-3 p-4 rounded-lg bg-secondary/90 backdrop-blur-md border border-border shadow-lg z-20">
-      {/* Shot Size Selection */}
-      <div className="space-y-2">
-        <div className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">
-          Shot Sizes
-        </div>
-        <div className="grid grid-cols-7 gap-1.5">
-          {SHOT_PRESETS.map((preset) => (
-            <button
-              key={preset.value}
-              onClick={() => handlePresetChange(preset.value)}
-              disabled={isFreeMode}
-              className={`
-                px-2 py-1.5 rounded text-xs font-medium transition-all
-                ${selectedPreset === preset.value && !isFreeMode
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-secondary border border-border/50 text-foreground/70 hover:bg-secondary/80'
-                }
-                ${isFreeMode && selectedPreset !== preset.value ? 'opacity-50 cursor-not-allowed' : ''}
-                whitespace-nowrap
-              `}
-              title={preset.label}
-            >
-              {preset.short}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Free Camera Mode Toggle */}
-      <div className="pt-2 border-t border-border/30">
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
         <Button
-          variant={isFreeMode ? 'default' : 'outline'}
-          size="sm"
-          onClick={handleFreeModeToggle}
-          className="w-full gap-2"
+          variant="outline"
+          size="icon"
+          className="absolute top-16 right-4 h-10 w-10 border-border bg-secondary/80 backdrop-blur-md hover:bg-secondary/90 z-20 shadow-lg"
+          title="Camera Controls"
         >
-          <Move3d className="w-4 h-4" />
-          {isFreeMode ? 'Free Camera' : 'Enable Free Camera'}
+          <Camera className="h-5 w-5" />
         </Button>
-        {isFreeMode && (
-          <div className="mt-2 text-xs text-foreground/60 text-center">
-            Drag to rotate • Scroll to zoom
+      </PopoverTrigger>
+      <PopoverContent
+        side="left"
+        align="start"
+        className="w-80 p-4 bg-secondary/95 backdrop-blur-md border-border shadow-lg"
+      >
+        <div className="space-y-4">
+          {/* Header */}
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">Camera Controls</h3>
+            <p className="text-xs text-foreground/60 mt-1">Choose a shot size or enable free camera mode</p>
           </div>
-        )}
-      </div>
-    </div>
+
+          {/* Shot Size Selection */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">
+              Shot Sizes
+            </label>
+            <div className="grid grid-cols-4 gap-1.5">
+              {SHOT_PRESETS.map((preset) => (
+                <button
+                  key={preset.value}
+                  onClick={() => handlePresetChange(preset.value)}
+                  disabled={isFreeMode}
+                  className={`
+                    px-2 py-2 rounded text-xs font-medium transition-all
+                    ${selectedPreset === preset.value && !isFreeMode
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-secondary border border-border/50 text-foreground/70 hover:bg-secondary/80'
+                    }
+                    ${isFreeMode && selectedPreset !== preset.value ? 'opacity-50 cursor-not-allowed' : ''}
+                    whitespace-nowrap
+                  `}
+                  title={preset.label}
+                >
+                  {preset.short}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Free Camera Mode Toggle */}
+          <div className="space-y-2 pt-2 border-t border-border/30">
+            <Button
+              variant={isFreeMode ? 'default' : 'outline'}
+              size="sm"
+              onClick={handleFreeModeToggle}
+              className="w-full gap-2"
+            >
+              <Move3d className="w-4 h-4" />
+              {isFreeMode ? 'Free Camera Active' : 'Enable Free Camera'}
+            </Button>
+            {isFreeMode && (
+              <div className="text-xs text-foreground/60 text-center bg-secondary/50 rounded p-2">
+                🖱️ Drag to rotate • Scroll to zoom
+              </div>
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
