@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Play, Trash2, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
+import type { LangCode } from '@/lib/lang-detect';
 
 export interface VrmaItem {
   id: string;
@@ -20,8 +22,14 @@ export interface VrmaItem {
   file_name: string;
   category: string;
   trigger_keywords: string[];
+  trigger_keywords_i18n: Partial<Record<LangCode, string[]>>;
   is_active: boolean;
 }
+
+const LANGS: LangCode[] = ['id', 'en', 'ja', 'ko', 'zh', 'th', 'vi'];
+const LANG_LABEL: Record<LangCode, string> = {
+  id: 'ID', en: 'EN', ja: 'JA', ko: 'KO', zh: 'ZH', th: 'TH', vi: 'VI',
+};
 
 const CATEGORIES = ['talking', 'greeting', 'idle', 'emote', 'gesture', 'reaction'] as const;
 
