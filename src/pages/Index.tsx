@@ -4,6 +4,7 @@ import AudioStatusIndicator from '@/components/AudioStatusIndicator';
 import ChatPanel from '@/components/ChatPanel';
 import UserMenu from '@/components/UserMenu';
 import NewUserModelBanner from '@/components/NewUserModelBanner';
+import CameraControls from '@/components/CameraControls';
 import { MessageSquare, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -11,7 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { detectMood } from '@/lib/sentiment';
 import { setTargetMood } from '@/lib/vrm-animations';
 import { useVrmaTriggers } from '@/hooks/useVrmaTriggers';
-import type { VrmViewerHandle } from '@/components/VrmViewer';
+import type { VrmViewerHandle, CameraPreset } from '@/components/VrmViewer';
 import type { LangCode } from '@/lib/lang-detect';
 
 const VrmViewer = lazy(() => import('@/components/VrmViewer'));
@@ -25,6 +26,8 @@ export default function Index() {
   const [voiceId, setVoiceId] = useState<string | undefined>(undefined);
   const [personality, setPersonality] = useState<string | undefined>(undefined);
   const [spokenMessage, setSpokenMessage] = useState<string>('');
+  const [isCameraFree, setIsCameraFree] = useState(false);
+  const [currentCameraPreset, setCurrentCameraPreset] = useState<CameraPreset>('medium-shot');
   // Initialize from window width to avoid flash on first render
   const [chatOpen, setChatOpen] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
@@ -156,6 +159,22 @@ export default function Index() {
     [findMatch, userLangPref],
   );
 
+  const handleCameraPresetChange = useCallback(
+    (preset: CameraPreset) => {
+      setCurrentCameraPreset(preset);
+      viewerRef.current?.setCameraPreset(preset);
+    },
+    [],
+  );
+
+  const handleCameraFreeModeChange = useCallback(
+    (enabled: boolean) => {
+      setIsCameraFree(enabled);
+      viewerRef.current?.setCameraFree(enabled);
+    },
+    [],
+  );
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-background flex">
       {/* New user model banner */}
@@ -178,6 +197,16 @@ export default function Index() {
             currentMessage={spokenMessage}
           />
         </Suspense>
+
+        {/* Camera Controls */}
+        {modelUrl && (
+          <CameraControls
+            onPresetChange={handleCameraPresetChange}
+            onFreeModeChange={handleCameraFreeModeChange}
+            isFreeMode={isCameraFree}
+            currentPreset={currentCameraPreset}
+          />
+        )}
 
         {/* Top bar overlay */}
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4 z-10">

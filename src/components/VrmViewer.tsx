@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm';
 import {
   updateBlink,
@@ -17,10 +18,65 @@ import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
 import { loadVRMA, createMixer, playVRMA, stopVRMA, returnToRestPose, type PlayVrmaOptions } from '@/lib/vrma-player';
 import { supabase } from '@/integrations/supabase/client';
 
+export type CameraPreset =
+  | 'extreme-closeup'
+  | 'closeup'
+  | 'medium-closeup'
+  | 'medium-shot'
+  | 'medium-wide-shot'
+  | 'wide-shot'
+  | 'extreme-wide-shot';
+
+// Camera preset positions and settings
+const CAMERA_PRESETS: Record<CameraPreset, {
+  position: [number, number, number];
+  target: [number, number, number];
+  fov: number;
+}> = {
+  'extreme-closeup': {
+    position: [0, 1.2, 0.35],
+    target: [0, 1.15, 0],
+    fov: 50,
+  },
+  'closeup': {
+    position: [0, 1.15, 0.55],
+    target: [0, 1.1, 0],
+    fov: 45,
+  },
+  'medium-closeup': {
+    position: [0, 1.1, 0.8],
+    target: [0, 1.05, 0],
+    fov: 40,
+  },
+  'medium-shot': {
+    position: [0, 1.05, 1.1],
+    target: [0, 0.95, 0],
+    fov: 36,
+  },
+  'medium-wide-shot': {
+    position: [0, 1.0, 1.4],
+    target: [0, 0.9, 0],
+    fov: 34,
+  },
+  'wide-shot': {
+    position: [0, 0.95, 1.7],
+    target: [0, 0.8, 0],
+    fov: 32,
+  },
+  'extreme-wide-shot': {
+    position: [0, 0.9, 2.1],
+    target: [0, 0.7, 0],
+    fov: 30,
+  },
+};
+
 export interface VrmViewerHandle {
   playVrmaUrl: (url: string, opts?: PlayVrmaOptions) => Promise<void>;
   stopVrma: (fadeOut?: number) => void;
   isVrmLoaded: () => boolean;
+  setCameraPreset: (preset: CameraPreset) => void;
+  setCameraFree: (enabled: boolean) => void;
+  isCameraFree: () => boolean;
 }
 
 interface VrmViewerProps {
@@ -51,6 +107,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const vrmaPlayingRef = useRef(false);
   const vrmaActionRef = useRef<THREE.AnimationAction | null>(null);
+
+  // Camera controls refs
+  const orbitControlsRef = useRef<OrbitControls | null>(null);
+  const cameraFreeRef = useRef(false);
+  const cameraAnimationRef = useRef<number>(0);
 
   // Talking animation state
   const talkingClipsRef = useRef<THREE.AnimationClip[]>([]);
@@ -440,9 +501,76 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     }
   }, [isSpeaking, currentMessage]);
 
+  // Camera animation helper: smoothly animate camera to preset position
+  const animateCameraToPreset = useCallback((preset: CameraPreset) => {
+    const camera = cameraRef.current;
+    const controls = orbitControlsRef.current;
+    if (!camera) return;
+
+    const presetData = CAMERA_PRESETS[preset];
+    const startPos = camera.position.clone();
+    const startTarget = controls ? controls.target.clone() : new THREE.Vector3(0, 0.95, 0);
+    const endPos = new THREE.Vector3(...presetData.position);
+    const endTarget = new THREE.Vector3(...presetData.target);
+    const duration = 0.6; // 600ms animation
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = (currentTime - startTime) / 1000;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Easing: ease-out-cubic
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+
+      camera.position.lerpVectors(startPos, endPos, easeProgress);
+      if (controls) {
+        controls.target.lerpVectors(startTarget, endTarget, easeProgress);
+      } else {
+        camera.lookAt(
+          THREE.MathUtils.lerp(startTarget.x, endTarget.x, easeProgress),
+          THREE.MathUtils.lerp(startTarget.y, endTarget.y, easeProgress),
+          THREE.MathUtils.lerp(startTarget.z, endTarget.z, easeProgress)
+        );
+      }
+
+      camera.fov = THREE.MathUtils.lerp(camera.fov, presetData.fov, easeProgress);
+      camera.updateProjectionMatrix();
+
+      if (progress < 1) {
+        cameraAnimationRef.current = requestAnimationFrame(animate);
+      } else {
+        cameraAnimationRef.current = 0;
+        if (controls) {
+          controls.update();
+        }
+      }
+    };
+
+    if (cameraAnimationRef.current) {
+      cancelAnimationFrame(cameraAnimationRef.current);
+    }
+    cameraAnimationRef.current = requestAnimationFrame(animate);
+  }, []);
+
   // Imperative API for parent (admin animation studio etc.)
   useImperativeHandle(ref, () => ({
     isVrmLoaded: () => !!vrmRef.current,
+    setCameraPreset: (preset: CameraPreset) => {
+      cameraFreeRef.current = false;
+      animateCameraToPreset(preset);
+      const controls = orbitControlsRef.current;
+      if (controls) {
+        controls.enabled = false;
+      }
+    },
+    setCameraFree: (enabled: boolean) => {
+      cameraFreeRef.current = enabled;
+      const controls = orbitControlsRef.current;
+      if (controls) {
+        controls.enabled = enabled;
+      }
+    },
+    isCameraFree: () => cameraFreeRef.current,
     playVrmaUrl: async (url, opts) => {
       const vrmBefore = vrmRef.current;
       if (!vrmBefore) throw new Error('VRM model belum dimuat');
@@ -582,6 +710,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       vrm.update(delta);
     }
 
+    // Update OrbitControls if enabled
+    if (orbitControlsRef.current && orbitControlsRef.current.enabled) {
+      orbitControlsRef.current.update();
+    }
+
     if (rendererRef.current && sceneRef.current && cameraRef.current) {
       rendererRef.current.render(sceneRef.current, cameraRef.current);
     }
@@ -651,6 +784,16 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Initialize OrbitControls (disabled by default)
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.95, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.autoRotate = false;
+    controls.enabled = false; // disabled by default, only enable when user switches to free mode
+    controls.update();
+    orbitControlsRef.current = controls;
+
     const ambient = new THREE.AmbientLight(0x88cccc, 0.8);
     scene.add(ambient);
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -702,14 +845,23 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       const wasMobile = isMobileRef.current;
       const nowMobile = container.clientWidth < 768;
       isMobileRef.current = nowMobile;
-      camera.fov = nowMobile ? 38 : 34;
-      camera.position.set(0, nowMobile ? 1.0 : 1.05, nowMobile ? 1.8 : 1.6);
-      camera.lookAt(0, 0.95, 0);
+
+      // Only reset camera if not in free mode
+      if (!cameraFreeRef.current) {
+        camera.fov = nowMobile ? 38 : 34;
+        camera.position.set(0, nowMobile ? 1.0 : 1.05, nowMobile ? 1.8 : 1.6);
+        camera.lookAt(0, 0.95, 0);
+      }
+
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(container.clientWidth, container.clientHeight);
       if (wasMobile !== nowMobile) {
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, nowMobile ? 1.5 : 2));
+      }
+
+      if (orbitControlsRef.current) {
+        orbitControlsRef.current.handleResize?.();
       }
     };
     window.addEventListener('resize', onResize);
@@ -723,10 +875,15 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
       cancelAnimationFrame(rafRef.current);
+      if (cameraAnimationRef.current) {
+        cancelAnimationFrame(cameraAnimationRef.current);
+      }
       renderer.dispose();
       if (renderer.domElement.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
       }
+      orbitControlsRef.current?.dispose();
+      orbitControlsRef.current = null;
       mixerRef.current?.stopAllAction();
       mixerRef.current = null;
       disconnectAudio();
