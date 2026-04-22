@@ -5,6 +5,8 @@ import ChatPanel from '@/components/ChatPanel';
 import UserMenu from '@/components/UserMenu';
 import NewUserModelBanner from '@/components/NewUserModelBanner';
 import CameraControls from '@/components/CameraControls';
+import OnboardingGuide from '@/components/OnboardingGuide';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { MessageSquare, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -179,6 +181,7 @@ export default function Index() {
   return (
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-background flex">
       <NewUserModelBanner />
+      <OnboardingGuide />
 
       {/* VRM Viewer — main area */}
       <div className="flex-1 relative min-w-0">
@@ -189,14 +192,25 @@ export default function Index() {
             </div>
           }
         >
-          <VrmViewer
-            ref={viewerRef}
-            modelUrl={modelUrl}
-            isSpeaking={isSpeaking}
-            audioElement={audioEl}
-            currentMessage={spokenMessage}
-            getAudioLevel={audioConnected ? getAudioLevel : undefined}
-          />
+          <ErrorBoundary
+            fallback={
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-center space-y-2">
+                  <p className="text-sm text-muted-foreground">Gagal memuat viewer 3D</p>
+                  <p className="text-xs text-muted-foreground/60">Coba refresh halaman</p>
+                </div>
+              </div>
+            }
+          >
+            <VrmViewer
+              ref={viewerRef}
+              modelUrl={modelUrl}
+              isSpeaking={isSpeaking}
+              audioElement={audioEl}
+              currentMessage={spokenMessage}
+              getAudioLevel={audioConnected ? getAudioLevel : undefined}
+            />
+          </ErrorBoundary>
         </Suspense>
 
         {/* Camera Controls */}

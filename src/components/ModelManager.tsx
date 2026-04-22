@@ -9,7 +9,8 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Upload, Trash2, Pencil, Check, X, Bot, Cpu } from 'lucide-react';
+import { Upload, Trash2, Pencil, Check, X, Bot, Cpu, ExternalLink } from 'lucide-react';
+import { UploadProgress } from '@/components/UploadProgress';
 import { toast } from 'sonner';
 
 interface VrmModel {
@@ -30,6 +31,7 @@ interface ModelManagerProps {
 export default function ModelManager({ models, onRefresh }: ModelManagerProps) {
   const { user } = useAuth();
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ name: string; progress: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: '', gender: '', personality: '' });
   const [deleteTarget, setDeleteTarget] = useState<VrmModel | null>(null);
@@ -42,9 +44,42 @@ export default function ModelManager({ models, onRefresh }: ModelManagerProps) {
     if (file.size > 100 * 1024 * 1024) { toast.error('File terlalu besar (max 100MB)'); return; }
 
     setUploading(true);
+    setUploadProgress({ name: file.name, progress: 0 });
     const filePath = `${user.id}/${Date.now()}_${file.name}`;
-    const { error: uploadError } = await supabase.storage.from('vrm-models').upload(filePath, file);
-    if (uploadError) { toast.error('Gagal upload: ' + uploadError.message); setUploading(false); return; }
+
+    // Use XMLHttpRequest for real upload progress
+    const uploadWithProgress = (): Promise<{ error: Error | null }> =>
+      new Promise((resolve) => {
+        const xhr = new XMLHttpRequest();
+        const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+        const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        xhr.open('POST', `${SUPABASE_URL}/storage/v1/object/vrm-models/${filePath}`);
+        xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_KEY}`);
+        xhr.setRequestHeader('x-upsert', 'false');
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            setUploadProgress({ name: file.name, progress: Math.round((ev.loaded / ev.total) * 95) });
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            setUploadProgress({ name: file.name, progress: 100 });
+            resolve({ error: null });
+          } else {
+            resolve({ error: new Error(`Upload failed: ${xhr.statusText}`) });
+          }
+        };
+        xhr.onerror = () => resolve({ error: new Error('Network error') });
+        xhr.send(file);
+      });
+
+    const { error: uploadError } = await uploadWithProgress();
+    if (uploadError) {
+      toast.error('Gagal upload: ' + uploadError.message);
+      setUploadProgress({ name: file.name, progress: -1 });
+      setUploading(false);
+      return;
+    }
 
     const { error: dbError } = await supabase.from('vrm_models').insert({
       name: file.name.replace('.vrm', ''),
@@ -53,8 +88,13 @@ export default function ModelManager({ models, onRefresh }: ModelManagerProps) {
       is_active: models.length === 0,
       user_id: user.id,
     });
-    if (dbError) toast.error('Gagal menyimpan: ' + dbError.message);
-    else { toast.success('Model berhasil diupload'); onRefresh(); }
+    if (dbError) {
+      toast.error('Gagal menyimpan: ' + dbError.message);
+      setUploadProgress({ name: file.name, progress: -1 });
+    } else {
+      toast.success('Model berhasil diupload');
+      onRefresh();
+    }
     setUploading(false);
     if (inputRef.current) inputRef.current.value = '';
   };
@@ -110,8 +150,17 @@ export default function ModelManager({ models, onRefresh }: ModelManagerProps) {
           </div>
         </div>
 
+        {/* Upload progress */}
+        {uploadProgress && (
+          <UploadProgress
+            progress={uploadProgress.progress}
+            fileName={uploadProgress.name}
+            onDone={() => setUploadProgress(null)}
+          />
+        )}
+
         {/* Empty state */}
-        {models.length === 0 ? (
+        {models.length === 0 && !uploading ? (
           <button
             onClick={() => inputRef.current?.click()}
             className="w-full rounded-xl border-2 border-dashed border-border/50 hover:border-primary/40 hover:bg-primary/3 transition-all p-8 flex flex-col items-center gap-3 text-center group"
@@ -123,6 +172,15 @@ export default function ModelManager({ models, onRefresh }: ModelManagerProps) {
               <p className="text-sm font-medium text-foreground/70">Upload model VRM pertamamu</p>
               <p className="text-xs text-muted-foreground mt-0.5">Klik untuk memilih file .vrm (max 100MB)</p>
             </div>
+            <a
+              href="https://hub.vroid.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 text-xs text-primary/70 hover:text-primary transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" /> Cari model di VRoid Hub
+            </a>
           </button>
         ) : (
           <div className="space-y-2.5">

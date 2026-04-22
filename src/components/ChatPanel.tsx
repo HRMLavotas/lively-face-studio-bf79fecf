@@ -164,9 +164,13 @@ export default function ChatPanel({
             messageCountRef.current += 1;
             loadConversations();
             setIsTTSLoading(true);
-            const audioUrl = await generateTTS(ttsText, voiceId);
+            const ttsResult = await generateTTS(ttsText, voiceId);
             setIsTTSLoading(false);
-            if (audioUrl) onSpeakStart(audioUrl, assistantSoFar);
+            if (ttsResult.url) {
+              onSpeakStart(ttsResult.url, assistantSoFar);
+            } else {
+              console.warn('[TTS] Failed:', ttsResult.error);
+            }
           }
         },
       });

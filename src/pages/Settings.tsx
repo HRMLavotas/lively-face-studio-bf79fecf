@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
 import ModelManager from '@/components/ModelManager';
 import VoiceSelector from '@/components/VoiceSelector';
+import LanguagePreference from '@/components/LanguagePreference';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
+      {/* Sticky header */}
       <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-xl">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center gap-3">
           <Button
@@ -58,6 +59,8 @@ export default function Settings() {
         <ModelManager models={models} onRefresh={fetchModels} />
         <div className="border-t border-border/40" />
         <VoiceSelector voices={voices} onRefresh={fetchVoices} />
+        <div className="border-t border-border/40" />
+        <LanguagePreference />
       </div>
     </div>
   );

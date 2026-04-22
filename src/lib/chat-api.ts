@@ -49,6 +49,8 @@ export async function streamChat({
   if (!resp.ok || !resp.body) {
     if (resp.status === 429) throw new Error("Rate limited. Coba lagi nanti.");
     if (resp.status === 402) throw new Error("Kredit habis. Tambahkan dana.");
+    if (resp.status === 401 || resp.status === 403) throw new Error("Sesi habis. Silakan login ulang.");
+    if (resp.status >= 500) throw new Error("Server sedang bermasalah. Coba lagi.");
     throw new Error("Gagal memulai chat");
   }
 
@@ -87,7 +89,10 @@ export async function streamChat({
   onDone();
 }
 
-export async function generateTTS(text: string, voiceId?: string): Promise<string | null> {
+export async function generateTTS(
+  text: string,
+  voiceId?: string,
+): Promise<{ url: string; error: null } | { url: null; error: string }> {
   try {
     const resp = await fetch(`${SUPABASE_URL}/functions/v1/tts`, {
       method: "POST",
@@ -98,14 +103,17 @@ export async function generateTTS(text: string, voiceId?: string): Promise<strin
       body: JSON.stringify({ text, voiceId }),
     });
 
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      if (resp.status === 429) return { url: null, error: "Rate limited TTS" };
+      return { url: null, error: `TTS error ${resp.status}` };
+    }
 
     const data = await resp.json();
     if (data.audioContent) {
-      return `data:audio/mpeg;base64,${data.audioContent}`;
+      return { url: `data:audio/mpeg;base64,${data.audioContent}`, error: null };
     }
-    return null;
-  } catch {
-    return null;
+    return { url: null, error: "No audio content" };
+  } catch (e) {
+    return { url: null, error: (e as Error).message };
   }
 }
