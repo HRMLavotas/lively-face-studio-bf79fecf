@@ -76,36 +76,40 @@ export default function AdminAnimations() {
     return false;
   };
 
+  const playWithFeedback = async (url: string, label: string, opts?: { loop?: boolean }) => {
+    const toastId = toast.loading(`Memuat ${label}…`);
+    try {
+      if (!viewerRef.current?.isVrmLoaded()) {
+        toast.loading('Menunggu model VRM siap…', { id: toastId });
+        const ready = await waitForVrmReady();
+        if (!ready) {
+          toast.error('Model VRM belum siap. Aktifkan model di Pengaturan.', { id: toastId, duration: 6000 });
+          return;
+        }
+      }
+      await viewerRef.current!.playVrmaUrl(url, { loop: opts?.loop ?? false, fadeIn: 0.3 });
+      toast.success(`▶ ${label}`, { id: toastId, duration: 2000 });
+    } catch (e) {
+      toast.error(`Gagal: ${(e as Error).message}`, { id: toastId, duration: 6000 });
+    }
+  };
+
   const handleFileSelected = async (file: File, blobUrl: string) => {
     if (prevBlobUrlRef.current && prevBlobUrlRef.current !== blobUrl) URL.revokeObjectURL(prevBlobUrlRef.current);
     prevBlobUrlRef.current = blobUrl;
     setPreviewFile(file);
     setPreviewUrl(blobUrl);
     if (!name) setName(file.name.replace(/\.vrma$/i, ''));
-
-    const id = toast.loading(`Memuat ${file.name}…`);
-    if (!viewerRef.current?.isVrmLoaded()) {
-      toast.loading('Menunggu model VRM siap…', { id });
-      const ready = await waitForVrmReady();
-      if (!ready) { toast.error('Model VRM belum siap', { id, duration: 6000 }); return; }
-    }
-    try {
-      await viewerRef.current!.playVrmaUrl(blobUrl, { loop, fadeIn: 0.3 });
-      toast.success('Preview berjalan', { id });
-    } catch (e) {
-      toast.error(`Gagal load VRMA: ${(e as Error).message}`, { id, duration: 6000 });
-    }
+    await playWithFeedback(blobUrl, file.name, { loop });
   };
 
   const handleReplay = async () => {
-    if (!previewUrl) return;
-    try { await viewerRef.current?.playVrmaUrl(previewUrl, { loop, fadeIn: 0.3 }); }
-    catch (e) { toast.error(`Gagal replay: ${(e as Error).message}`); }
+    if (!previewUrl || !previewFile) return;
+    await playWithFeedback(previewUrl, previewFile.name, { loop });
   };
 
   const handlePlayFromLibrary = async (url: string, item: VrmaItem) => {
-    try { await viewerRef.current?.playVrmaUrl(url, { loop: false, fadeIn: 0.3 }); toast.success(`Memutar: ${item.name}`); }
-    catch (e) { toast.error(`Gagal: ${(e as Error).message}`); }
+    await playWithFeedback(url, item.name);
   };
 
   const handleSave = async () => {

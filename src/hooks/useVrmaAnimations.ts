@@ -319,15 +319,12 @@ export function useVrmaAnimations(
     if (!vrmBefore) throw new Error('VRM model belum dimuat');
 
     const clip = await loadVRMA(url, vrmBefore);
-    if (clip.duration < 1.0) {
-      console.warn('[VRMA] Skipping very short clip:', clip.duration.toFixed(2), 's');
-      return;
-    }
 
+    // Removed the duration < 1.0 guard — short clips (e.g. quick gestures) are valid
     const vrm = vrmRef.current;
     if (!vrm || vrm !== vrmBefore) return;
-    if (isSpeakingRef.current && isTalkingPlayingRef.current) return;
 
+    // Don't block gesture playback when talking — allow override
     if (!mixerRef.current) mixerRef.current = createMixer(vrm);
     const mixer = mixerRef.current;
 

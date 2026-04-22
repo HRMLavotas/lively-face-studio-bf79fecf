@@ -5,7 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, Trash2, Pencil, Check, X, Library } from 'lucide-react';
+import { Play, Trash2, Pencil, Check, X, Library, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { LangCode } from '@/lib/lang-detect';
 
@@ -55,6 +55,7 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState>({ name: '', category: '', keywordsByLang: emptyKeywordsByLang() });
   const [saving, setSaving] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -79,7 +80,14 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
 
   const handlePlay = (item: VrmaItem) => {
     const { data } = supabase.storage.from('vrma-animations').getPublicUrl(item.file_path);
-    if (data?.publicUrl) onPlay(data.publicUrl, item);
+    if (data?.publicUrl) {
+      setPlayingId(item.id);
+      onPlay(data.publicUrl, item);
+      // Reset playing indicator after a short delay
+      setTimeout(() => setPlayingId(null), 2000);
+    } else {
+      toast.error('Gagal mendapatkan URL animasi');
+    }
   };
 
   const handleToggle = async (item: VrmaItem) => {
@@ -218,14 +226,15 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
                     </div>
                   </div>
                 ) : (
-                  /* View mode */
+                  /* View mode — 2-row layout agar semua tombol terlihat */
                   <div
                     key={item.id}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border transition-all ${
+                    className={`rounded-xl border transition-all ${
                       item.is_active ? 'border-border/50 bg-secondary/30' : 'border-border/30 bg-secondary/15 opacity-60'
                     }`}
                   >
-                    <div className="flex-1 min-w-0">
+                    {/* Row 1: nama + keywords */}
+                    <div className="px-3 pt-2.5 pb-1.5">
                       <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
                       {item.trigger_keywords.length > 0 ? (
                         <p className="text-[10px] text-muted-foreground/70 truncate font-mono mt-0.5">
@@ -236,20 +245,59 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
                       )}
                     </div>
 
-                    <Switch
-                      checked={item.is_active}
-                      onCheckedChange={() => handleToggle(item)}
-                      className="shrink-0 scale-75"
-                    />
-                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-primary" onClick={() => handlePlay(item)} title="Preview">
-                      <Play className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(item)} title="Edit">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(item)} title="Hapus">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
+                    {/* Row 2: actions */}
+                    <div className="flex items-center gap-1 px-2 pb-2 border-t border-border/20 pt-1.5">
+                      {/* Play — paling penting, dibuat lebih besar */}
+                      <Button
+                        size="sm"
+                        variant={playingId === item.id ? 'default' : 'outline'}
+                        className={`h-7 gap-1.5 text-xs flex-1 ${
+                          playingId === item.id
+                            ? 'bg-primary/20 text-primary border-primary/40 hover:bg-primary/30'
+                            : 'border-border/50 text-muted-foreground hover:text-primary hover:border-primary/40'
+                        }`}
+                        onClick={() => handlePlay(item)}
+                      >
+                        {playingId === item.id
+                          ? <><Loader2 className="w-3 h-3 animate-spin" /> Memutar…</>
+                          : <><Play className="w-3 h-3" /> Play</>
+                        }
+                      </Button>
+
+                      {/* Toggle active */}
+                      <div className="flex items-center gap-1 px-2 border-l border-border/30">
+                        <span className="text-[10px] text-muted-foreground/60">
+                          {item.is_active ? 'On' : 'Off'}
+                        </span>
+                        <Switch
+                          checked={item.is_active}
+                          onCheckedChange={() => handleToggle(item)}
+                          className="scale-75"
+                        />
+                      </div>
+
+                      {/* Edit */}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                        onClick={() => startEdit(item)}
+                        title="Edit"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+
+                      {/* Delete */}
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleDelete(item)}
+                        title="Hapus"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   </div>
                 )
               )}

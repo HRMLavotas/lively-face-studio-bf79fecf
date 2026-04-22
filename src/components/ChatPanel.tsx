@@ -2,11 +2,16 @@ import { useState, useRef, useEffect, memo, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Send, Volume2, ChevronDown, X, Bot, User,
   Square, Plus, History, Trash2, Pencil, Check,
+  Search, Download, RefreshCw, MoreVertical,
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { streamChat, generateTTS, parseAnimTag, type ChatMessage } from '@/lib/chat-api';
 import { useConversations } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
@@ -41,8 +46,10 @@ export default function ChatPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [isTTSLoading, setIsTTSLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [historySearch, setHistorySearch] = useState('');
   const [editingConvoId, setEditingConvoId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [lastAssistantText, setLastAssistantText] = useState('');
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -108,6 +115,96 @@ export default function ChatPanel({
     setIsTTSLoading(false);
   }, []);
 
+  // Export conversation as JSON
+  const handleExport = useCallback(() => {
+    if (messages.length === 0) { toast.error('Tidak ada pesan untuk diekspor'); return; }
+    const title = conversations.find(c => c.id === activeId)?.title ?? 'percakapan';
+    const data = { title, exported_at: new Date().toISOString(), messages };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Percakapan diekspor');
+  }, [messages, conversations, activeId]);
+
+  // Regenerate last assistant response
+  const handleRegenerate = useCallback(async () => {
+    if (isLoading || messages.length < 2) return;
+    // Find last user message
+    const lastUserIdx = [...messages].reverse().findIndex(m => m.role === 'user');
+    if (lastUserIdx === -1) return;
+    const userMsgIdx = messages.length - 1 - lastUserIdx;
+    const contextMessages = messages.slice(0, userMsgIdx + 1);
+
+    // Remove last assistant message from UI
+    setMessages(contextMessages);
+    setIsLoading(true);
+
+    let assistantSoFar = '';
+    const upsertAssistant = (chunk: string) => {
+      assistantSoFar += chunk;
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant') {
+          return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
+        }
+        return [...prev, { role: 'assistant', content: assistantSoFar }];
+      });
+    };
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      await streamChat({
+        messages: contextMessages,
+        onDelta: upsertAssistant,
+        systemPrompt: personality,
+        signal: ctrl.signal,
+        onDone: async () => {
+          setIsLoading(false);
+          if (assistantSoFar) {
+            const { clean } = parseAnimTag(assistantSoFar);
+            const ttsText = clean || assistantSoFar;
+            if (clean !== assistantSoFar) {
+              setMessages(prev => prev.map((m, i) =>
+                i === prev.length - 1 && m.role === 'assistant' ? { ...m, content: clean } : m
+              ));
+            }
+            setLastAssistantText(assistantSoFar);
+            setIsTTSLoading(true);
+            const ttsResult = await generateTTS(ttsText, voiceId);
+            setIsTTSLoading(false);
+            if (ttsResult.url) onSpeakStart(ttsResult.url, assistantSoFar);
+            else toast.error('TTS gagal', { action: { label: 'Coba lagi', onClick: () => handleRetryTTS(ttsText, assistantSoFar) } });
+          }
+        },
+      });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') { setIsLoading(false); return; }
+      toast.error(e instanceof Error ? e.message : 'Regenerasi gagal');
+      setIsLoading(false);
+    }
+  }, [isLoading, messages, personality, voiceId, onSpeakStart]);
+
+  // Retry TTS for last response
+  const handleRetryTTS = useCallback(async (ttsText?: string, originalText?: string) => {
+    const text = ttsText ?? lastAssistantText;
+    if (!text) return;
+    setIsTTSLoading(true);
+    const ttsResult = await generateTTS(text, voiceId);
+    setIsTTSLoading(false);
+    if (ttsResult.url) {
+      onSpeakStart(ttsResult.url, originalText ?? text);
+      toast.success('Audio berhasil diputar');
+    } else {
+      toast.error('TTS masih gagal: ' + ttsResult.error);
+    }
+  }, [lastAssistantText, voiceId, onSpeakStart]);
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || isLoading) return;
@@ -163,6 +260,7 @@ export default function ChatPanel({
             await saveMessage(convoId, 'assistant', clean || assistantSoFar);
             messageCountRef.current += 1;
             loadConversations();
+            setLastAssistantText(assistantSoFar);
             setIsTTSLoading(true);
             const ttsResult = await generateTTS(ttsText, voiceId);
             setIsTTSLoading(false);
@@ -170,6 +268,9 @@ export default function ChatPanel({
               onSpeakStart(ttsResult.url, assistantSoFar);
             } else {
               console.warn('[TTS] Failed:', ttsResult.error);
+              toast.error('Audio gagal dibuat', {
+                action: { label: 'Coba lagi', onClick: () => handleRetryTTS(ttsText, assistantSoFar) },
+              });
             }
           }
         },
@@ -183,7 +284,7 @@ export default function ChatPanel({
   }, [
     input, isLoading, messages, personality, voiceId, isMobile, isOpen,
     onUserMessage, onSpeakStart, onUnreadChange,
-    ensureConversation, saveMessage, maybeSetTitle, loadConversations,
+    ensureConversation, saveMessage, maybeSetTitle, loadConversations, handleRetryTTS,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -243,8 +344,26 @@ export default function ChatPanel({
       )}
       {messages.map((msg, i) => <MessageBubble key={i} msg={msg} />)}
       <LoadingIndicators isLoading={isLoading} isTTSLoading={isTTSLoading} messages={messages} />
+      {/* Regenerate button — shown after last assistant message when not loading */}
+      {!isLoading && !isTTSLoading && messages.length >= 2 && messages[messages.length - 1]?.role === 'assistant' && (
+        <div className="flex justify-start pl-8">
+          <button
+            onClick={handleRegenerate}
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors py-1 px-2 rounded-lg hover:bg-secondary/40"
+          >
+            <RefreshCw className="w-3 h-3" /> Regenerasi
+          </button>
+        </div>
+      )}
     </div>
   );
+
+  const filteredConversations = historySearch.trim()
+    ? conversations.filter(c =>
+        c.title.toLowerCase().includes(historySearch.toLowerCase()) ||
+        c.preview?.toLowerCase().includes(historySearch.toLowerCase())
+      )
+    : conversations;
 
   const historyPanel = (
     <div className="flex flex-col h-full">
@@ -252,11 +371,32 @@ export default function ChatPanel({
         <div className="flex items-center gap-2">
           <History className="w-3.5 h-3.5 text-muted-foreground" />
           <span className="text-xs font-semibold text-foreground/80">Riwayat Chat</span>
+          {conversations.length > 0 && (
+            <span className="text-[10px] text-muted-foreground/60 bg-secondary/60 px-1.5 py-0.5 rounded-full">
+              {conversations.length}
+            </span>
+          )}
         </div>
         <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground" onClick={() => setShowHistory(false)}>
           <X className="w-3.5 h-3.5" />
         </Button>
       </div>
+
+      {/* Search */}
+      {conversations.length > 3 && (
+        <div className="px-3 py-2 border-b border-border/30">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/50" />
+            <Input
+              value={historySearch}
+              onChange={(e) => setHistorySearch(e.target.value)}
+              placeholder="Cari percakapan…"
+              className="h-8 pl-8 text-xs bg-secondary/40 border-border/40 focus:border-primary/40"
+            />
+          </div>
+        </div>
+      )}
+
       <ScrollArea className="flex-1 scrollbar-thin">
         <div className="p-2 space-y-0.5">
           <button
@@ -268,14 +408,21 @@ export default function ChatPanel({
           </button>
 
           {convosLoading ? (
-            <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
-              <div className="h-3 w-3 rounded-full border border-primary border-t-transparent animate-spin" />
-              Memuat…
+            /* Skeleton loaders */
+            <div className="space-y-1 px-1 pt-1">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="px-3 py-2.5 rounded-lg space-y-1.5">
+                  <div className="h-3 bg-secondary/60 rounded animate-pulse" style={{ width: `${60 + i * 10}%` }} />
+                  <div className="h-2.5 bg-secondary/40 rounded animate-pulse w-4/5" />
+                </div>
+              ))}
             </div>
-          ) : conversations.length === 0 ? (
-            <p className="text-xs text-muted-foreground px-3 py-4 text-center">Belum ada riwayat</p>
+          ) : filteredConversations.length === 0 ? (
+            <p className="text-xs text-muted-foreground px-3 py-4 text-center">
+              {historySearch ? 'Tidak ada hasil' : 'Belum ada riwayat'}
+            </p>
           ) : (
-            conversations.map((c) => (
+            filteredConversations.map((c) => (
               <div
                 key={c.id}
                 className={`group relative flex items-start gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-colors ${
@@ -394,6 +541,25 @@ export default function ChatPanel({
               <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={startNewConversation} title="Percakapan baru">
                 <Plus className="w-3.5 h-3.5" />
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44 bg-card/95 backdrop-blur-xl border-border/60">
+                  <DropdownMenuItem onClick={handleExport} className="text-xs gap-2">
+                    <Download className="w-3.5 h-3.5" /> Export JSON
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleRegenerate}
+                    disabled={isLoading || messages.length < 2}
+                    className="text-xs gap-2"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Regenerasi
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -412,25 +578,43 @@ export default function ChatPanel({
 // ── Message bubble ────────────────────────────────────────────────────────────
 const MessageBubble = memo(function MessageBubble({ msg }: { msg: ChatMessage }) {
   const isUser = msg.role === 'user';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(msg.content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
   return (
-    <div className={`flex items-end gap-2 animate-msg-in ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`group flex items-end gap-2 animate-msg-in ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mb-0.5 ${
         isUser ? 'bg-primary/20 border border-primary/30' : 'bg-secondary border border-border/60'
       }`}>
         {isUser ? <User className="w-3 h-3 text-primary" /> : <Bot className="w-3 h-3 text-muted-foreground" />}
       </div>
-      <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
-        isUser
-          ? 'bg-primary text-primary-foreground rounded-br-sm'
-          : 'bg-secondary/80 text-secondary-foreground border border-border/40 rounded-bl-sm'
-      }`}>
-        {msg.role === 'assistant' ? (
-          <div className="prose prose-sm prose-invert max-w-none [&>p]:mb-1.5 [&>p:last-child]:mb-0 [&>ul]:mt-1 [&>ol]:mt-1">
-            <ReactMarkdown>{msg.content}</ReactMarkdown>
-          </div>
-        ) : (
-          <span>{msg.content}</span>
-        )}
+      <div className="relative max-w-[82%]">
+        <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+          isUser
+            ? 'bg-primary text-primary-foreground rounded-br-sm'
+            : 'bg-secondary/80 text-secondary-foreground border border-border/40 rounded-bl-sm'
+        }`}>
+          {msg.role === 'assistant' ? (
+            <div className="prose prose-sm prose-invert max-w-none [&>p]:mb-1.5 [&>p:last-child]:mb-0 [&>ul]:mt-1 [&>ol]:mt-1">
+              <ReactMarkdown>{msg.content}</ReactMarkdown>
+            </div>
+          ) : (
+            <span>{msg.content}</span>
+          )}
+        </div>
+        {/* Copy button — appears on hover */}
+        <button
+          onClick={handleCopy}
+          className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-muted-foreground/60 hover:text-muted-foreground flex items-center gap-1`}
+        >
+          {copied ? '✓ Disalin' : 'Salin'}
+        </button>
       </div>
     </div>
   );

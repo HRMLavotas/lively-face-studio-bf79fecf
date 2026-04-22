@@ -679,8 +679,10 @@ export function updateIdleMicroGestures(
   if (upperChest && !isDriven('upperChest')) upperChest.rotation.x += breathUpperX;
 
   const totalBreathX = breathX + breathUpperX;
-  if (neck && !isDriven('neck')) { neck.rotation.x -= totalBreathX * 0.5; neck.rotation.z = 0; }
-  if (head && !isDriven('head')) { head.rotation.x -= totalBreathX * 0.5; head.rotation.z = 0; }
+  // neck & head: skip rotation.x/z here — look-at system handles them with SET (not +=)
+  // Only apply breathing to chest/upperChest to avoid conflict
+  if (neck && !isDriven('neck')) { neck.rotation.z = 0; }
+  if (head && !isDriven('head')) { head.rotation.z = 0; }
 }
 
 // ============================================

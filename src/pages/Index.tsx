@@ -7,6 +7,7 @@ import NewUserModelBanner from '@/components/NewUserModelBanner';
 import CameraControls from '@/components/CameraControls';
 import OnboardingGuide from '@/components/OnboardingGuide';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import KeyboardShortcutsHelp from '@/components/KeyboardShortcutsHelp';
 import { MessageSquare, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -182,6 +183,7 @@ export default function Index() {
     <div className="relative h-[100dvh] w-screen overflow-hidden bg-background flex">
       <NewUserModelBanner />
       <OnboardingGuide />
+      <KeyboardShortcutsHelp />
 
       {/* VRM Viewer — main area */}
       <div className="flex-1 relative min-w-0">
@@ -246,7 +248,7 @@ export default function Index() {
               size="icon"
               onClick={handleToggleChat}
               className="relative h-8 w-8 border-border/60 bg-secondary/60 backdrop-blur-md hover:bg-secondary/80 transition-colors"
-              title={`${chatOpen ? 'Tutup' : 'Buka'} chat (Ctrl+K)`}
+              title={`${chatOpen ? 'Tutup' : 'Buka'} chat (Ctrl+K) · ? untuk shortcuts`}
             >
               {chatOpen
                 ? <X className="w-4 h-4" />

@@ -14,6 +14,8 @@ import {
 } from '@/lib/vrm-animations';
 import { detectMood } from '@/lib/sentiment';
 import { createMixer, playVRMA } from '@/lib/vrma-player';
+import { initLookAt, updateLookAt, setLookAtEnabled } from '@/lib/vrm-lookat';
+import { initSpringBones, updateSpringBones } from '@/lib/vrm-spring';
 import type { PlayVrmaOptions } from '@/lib/vrma-player';
 import {
   computeAdaptivePresets,
@@ -224,6 +226,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     setCameraFree: (enabled) => {
       cameraFreeRef.current = enabled;
       if (orbitControlsRef.current) orbitControlsRef.current.enabled = enabled;
+      setLookAtEnabled(!enabled); // disable look-at in free camera mode
     },
     isCameraFree: () => cameraFreeRef.current,
     playVrmaUrl,
@@ -270,7 +273,14 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       }
       updateIdleSmile(delta, vrm, isManualOrTalking);
 
-      // 4. Lip sync
+      // 4. Look-at ALWAYS runs after mixer — passes empty set so it always
+      //    overrides neck/head even when VRMA clips drive those bones.
+      //    This is intentional: look-at should always win over animation.
+      if (cameraRef.current && !cameraFreeRef.current) {
+        updateLookAt(delta, vrm, cameraRef.current, new Set());
+      }
+
+      // 5. Lip sync
       if (isSpeakingRef.current) {
         vrm.expressionManager?.setValue('aa', 0);
         updateLipSync(getAudioLevelRef.current?.() ?? 0, vrm, delta);
@@ -279,7 +289,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       // 5. Apply all expression weights to morph targets
       vrm.update(delta);
 
-      // 6. Blink MUST run after vrm.update() every frame (no throttle)
+      // 6. Spring bones — secondary motion (hair, accessories, etc.)
+      //    Runs after vrm.update() so it adds on top of the base pose
+      updateSpringBones(delta, vrm);
+
+      // 7. Blink MUST run after vrm.update() every frame (no throttle)
       updateBlink(delta, vrm);
     }
 
@@ -389,6 +403,9 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         vrmRef.current = vrm;
         mixerRef.current = createMixer(vrm);
 
+        // Init spring bones for secondary motion
+        initSpringBones(vrm);
+
         requestAnimationFrame(() => {
           const presets = computeAdaptivePresets(vrm);
           adaptivePresetsRef.current = presets;
@@ -421,6 +438,9 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     lastFrameTimeRef.current = performance.now();
     frameCountRef.current = 0;
     rafRef.current = requestAnimationFrame(animate);
+
+    // Init look-at mouse tracking
+    const cleanupLookAt = initLookAt(container);
 
     const onResize = () => {
       if (!container) return;
@@ -455,6 +475,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     return () => {
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
+      cleanupLookAt();
       cancelAnimationFrame(rafRef.current);
       if (cameraAnimationRef.current) cancelAnimationFrame(cameraAnimationRef.current);
       renderer.dispose();
