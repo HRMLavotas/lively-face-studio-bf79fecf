@@ -3,6 +3,26 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
+/**
+ * Parse the optional `[ANIM:<name>]` tag the AI may append to its reply.
+ * Returns the text with the tag stripped + the animation name (or null).
+ * Tag may be on its own line or appended at the end. Match is greedy on
+ * the last occurrence so retries don't confuse the parser.
+ */
+export function parseAnimTag(text: string): { clean: string; animName: string | null } {
+  if (!text) return { clean: text, animName: null };
+  // Match the LAST [ANIM:...] occurrence, optionally surrounded by whitespace/newlines.
+  const re = /\s*\[ANIM:\s*([^\]\n]+?)\s*\]\s*$/i;
+  const m = text.match(re);
+  if (!m) return { clean: text, animName: null };
+  const name = m[1].trim();
+  const clean = text.slice(0, m.index).replace(/\s+$/, "");
+  if (!name || name.toLowerCase() === "none") {
+    return { clean, animName: null };
+  }
+  return { clean, animName: name };
+}
+
 export async function streamChat({
   messages,
   onDelta,
