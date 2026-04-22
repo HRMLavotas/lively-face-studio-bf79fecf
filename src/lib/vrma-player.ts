@@ -15,40 +15,33 @@ export interface PlayVrmaOptions {
 }
 
 /**
- * Smoothly return VRM humanoid bones back to the normalized rest pose.
- * This is called after talking animation ends to avoid the avatar freezing
- * in a mid-gesture position.
+ * Gently fade out all active actions without ever calling stopAllAction()
+ * or resetNormalizedPose(). Those two calls cause an immediate T-pose snap
+ * which we must avoid at all costs.
  *
- * Strategy: fade-out the current action so THREE.js blends back to the
- * bind/rest pose over `duration` seconds. Then stop the mixer entirely.
+ * Callers should cross-fade to an idle clip immediately after this resolves.
  */
 export function returnToRestPose(
   mixer: THREE.AnimationMixer | null,
-  vrm: VRM,
+  _vrm: VRM,
   duration = 0.5
 ): Promise<void> {
   return new Promise((resolve) => {
     if (!mixer) {
-      try { vrm.humanoid?.resetNormalizedPose(); } catch (_) { /* ok */ }
       resolve();
       return;
     }
 
-    // Fade out every active action so mixer blends to zero-weight (rest pose).
-    // THREE.AnimationMixer exposes _actions as a private field; cast to any.
+    // Fade out every active action — THREE blends bones smoothly to
+    // zero-contribution. NEVER call stopAllAction/resetNormalizedPose here;
+    // those produce a 1-frame T-pose snap.
     const actions = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
     actions.forEach((action) => {
       try { action.fadeOut(duration); } catch (_) { /* ok */ }
     });
 
-    // After the fade completes, reset pose explicitly and stop mixer.
-    setTimeout(() => {
-      try {
-        mixer.stopAllAction();
-        vrm.humanoid?.resetNormalizedPose();
-      } catch (_) { /* ok */ }
-      resolve();
-    }, duration * 1000 + 50);
+    // Resolve after fade so caller can start the next clip
+    setTimeout(() => { resolve(); }, duration * 1000 + 30);
   });
 }
 
@@ -233,12 +226,18 @@ export function playVRMA(
   return action;
 }
 
-/** Stop all currently-playing actions. */
-export function stopVRMA(mixer: THREE.AnimationMixer | null, _fadeOut = 0.3): void {
+/**
+ * Fade out all currently-playing actions without stopping the mixer.
+ * NEVER call stopAllAction() — that causes an immediate T-pose snap.
+ * Callers should immediately crossfade to an idle/rest clip after calling this.
+ */
+export function stopVRMA(mixer: THREE.AnimationMixer | null, fadeOut = 0.3): void {
   if (!mixer) return;
   try {
-    mixer.timeScale = 1;
-    mixer.stopAllAction();
+    const actions = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
+    actions.forEach((action) => {
+      try { action.fadeOut(fadeOut); } catch (_) { /* ok */ }
+    });
   } catch (e) {
     console.warn('stopVRMA: failed (safe to ignore):', e);
   }

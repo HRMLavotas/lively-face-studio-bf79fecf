@@ -15,7 +15,7 @@ import {
 } from '@/lib/vrm-animations';
 import { detectMood } from '@/lib/sentiment';
 import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
-import { loadVRMA, createMixer, playVRMA, stopVRMA, returnToRestPose, type PlayVrmaOptions } from '@/lib/vrma-player';
+import { loadVRMA, createMixer, playVRMA, stopVRMA, type PlayVrmaOptions } from '@/lib/vrma-player';
 import { supabase } from '@/integrations/supabase/client';
 
 export type CameraPreset =
@@ -487,13 +487,15 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
             vrmaPlayingRef.current = false;
           }
         } else if (vrm && mixer && vrmaPlayingRef.current) {
-          // Fallback: no idle clips loaded — fade everything out to rest pose.
+          // Fallback: no idle clips loaded — fade everything out softly (no T-pose).
           isReturnToRestRef.current = true;
-          returnToRestPose(mixer, vrm, 0.5).then(() => {
+          const actions = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
+          actions.forEach((a) => { try { a.fadeOut(0.5); } catch (_) { /* ok */ } });
+          setTimeout(() => {
             vrmaPlayingRef.current = false;
             isReturnToRestRef.current = false;
             restartIdleLoop();
-          });
+          }, 600);
         }
       }
 
@@ -615,13 +617,6 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         mixerRef.current = createMixer(targetVrm);
       }
 
-      // Reset pose to rest before applying new clip — prevents residual pose snap
-      try {
-        targetVrm.humanoid?.resetNormalizedPose();
-      } catch (e) {
-        console.warn('[VRMA] resetNormalizedPose failed (safe to ignore):', e);
-      }
-
       const mixer = mixerRef.current;
       // Set vrmaPlayingRef BEFORE calling playVRMA so the animate loop
       // starts updating the mixer on the very next frame.
@@ -676,21 +671,36 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     },
     stopVrma: (fadeOut = 0.3) => {
       isTalkingPlayingRef.current = false;
-      const vrm = vrmRef.current;
-      if (vrm && mixerRef.current) {
-        returnToRestPose(mixerRef.current, vrm, fadeOut).then(() => {
+      vrmaActionRef.current = null;
+      const mixer = mixerRef.current;
+      const idleClips = idleClipsRef.current;
+
+      if (mixer && idleClips.length > 0) {
+        // Crossfade directly to idle — never go through T-pose.
+        // fadeOut old actions via stopVRMA (which only fadeOut, no stopAllAction)
+        stopVRMA(mixer, fadeOut);
+        // Immediately start idle with a matching fadeIn
+        const idleClip = idleClips[idleCurrentIndexRef.current % idleClips.length];
+        idleClipRef.current = idleClip;
+        const idleAction = playVRMA(mixer, idleClip, { loop: true, fadeIn: fadeOut });
+        if (idleAction) {
+          idleActionRef.current = idleAction;
+          vrmaPlayingRef.current = true;
+          activeDrivenBonesRef.current = getClipDrivenBones(idleClip);
+        } else {
           vrmaPlayingRef.current = false;
-          vrmaActionRef.current = null;
-          restartIdleLoop();
-        });
-      } else {
-        stopVRMA(mixerRef.current, fadeOut);
+        }
+      } else if (mixer) {
+        // No idle clips yet — just fade out existing actions softly
+        stopVRMA(mixer, fadeOut);
         vrmaPlayingRef.current = false;
-        vrmaActionRef.current = null;
-        restartIdleLoop();
+        // Try to restart idle once clips are available
+        setTimeout(() => restartIdleLoop(), fadeOut * 1000 + 50);
+      } else {
+        vrmaPlayingRef.current = false;
       }
     },
-  }), []);
+  }), [animateCameraToPreset, restartIdleLoop, playNextTalking]);
 
   // Keep latest getAudioLevel in a ref so animate() doesn't need it as a dep.
   // This prevents the main useEffect from re-running (and reloading VRM + mixer)
