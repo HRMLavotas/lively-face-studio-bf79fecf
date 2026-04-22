@@ -189,8 +189,9 @@ export function playVRMA(
   try {
     const all = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
     for (const a of all) {
-      // Active = currently contributing weight to the pose
-      if (a.isRunning() || a.getEffectiveWeight() > 0.001) {
+      // Include any enabled/running action, even at weight≈0. THREE keeps
+      // them as a valid source pose for cross-fade — preventing T-pose flash.
+      if (a.enabled || a.isRunning() || a.getEffectiveWeight() > 0.001) {
         prevActions.push(a);
       }
     }
@@ -219,17 +220,14 @@ export function playVRMA(
 
   action.play();
 
-  // Schedule cleanup of old actions AFTER the cross-fade completes so they
-  // don't leak. We stop them (no-op if already stopped) — keep the clips
-  // cached for fast re-use.
-  if (prevActions.length > 0) {
-    setTimeout(() => {
-      for (const prev of prevActions) {
-        if (prev === action) continue;
-        try { prev.stop(); } catch (_) { /* ok */ }
-      }
-    }, Math.max(50, fadeIn * 1000 + 30));
-  }
+  // NOTE: We intentionally do NOT stop() prev actions after the fade.
+  // THREE.AnimationMixer keeps actions in `_actions` even at weight=0; they
+  // contribute nothing to the pose but remain valid as a "source pose" for
+  // the NEXT cross-fade. Calling stop() here would deactivate them and the
+  // next playVRMA call would have no source action → bones snap to bind
+  // pose (T-pose flash) during fadeIn. Clip count is bounded (~120) so the
+  // memory footprint is fine; clipAction() returns the same cached action
+  // when re-invoked with the same clip.
 
   console.log('[VRMA] Action cross-faded in — duration:', clip.duration.toFixed(2), 's, loop:', loop, 'prev actions faded:', prevActions.length);
   return action;
