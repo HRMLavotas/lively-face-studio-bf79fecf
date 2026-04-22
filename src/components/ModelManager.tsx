@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Upload, Trash2, Pencil, Check, X, Bot, Cpu, ExternalLink } from 'lucide-react';
 import { UploadProgress } from '@/components/UploadProgress';
-import PersonalityPresets from '@/components/PersonalityPresets';
 import { toast } from 'sonner';
 
 interface VrmModel {
