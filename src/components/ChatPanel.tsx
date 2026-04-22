@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Volume2, ChevronUp, X } from 'lucide-react';
-import { streamChat, generateTTS, type ChatMessage } from '@/lib/chat-api';
+import { streamChat, generateTTS, parseAnimTag, type ChatMessage } from '@/lib/chat-api';
 import { toast } from 'sonner';
 
 interface ChatPanelProps {
