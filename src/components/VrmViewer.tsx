@@ -634,8 +634,12 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       activeDrivenBonesRef.current = getClipDrivenBones(clip);
       console.log('[VRMA] Playback started, duration:', clip.duration.toFixed(2), 's', 'driven bones:', Array.from(activeDrivenBonesRef.current));
 
-      // When admin manually plays VRMA, also stop any talking loop
-      isTalkingPlayingRef.current = false;
+      // When admin manually plays VRMA, also stop any talking loop —
+      // BUT only if TTS isn't currently active (AI-driven gestures during
+      // TTS must allow talking to resume after the gesture finishes).
+      if (!isSpeakingRef.current) {
+        isTalkingPlayingRef.current = false;
+      }
 
       const onFinished = (e: { action: THREE.AnimationAction }) => {
         if (e.action === vrmaActionRef.current) {
