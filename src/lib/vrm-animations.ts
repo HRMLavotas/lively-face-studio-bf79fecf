@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import type { VRM } from '@pixiv/three-vrm';
 import type { MoodName } from './sentiment';
 
@@ -447,26 +448,34 @@ export function setIdleMoodEnabled(enabled: boolean): void {
   _idleEnabled = enabled;
 }
 
+// Pre-computed key arrays — avoids Object.keys() allocation every frame
+const PS_KEYS = Object.keys(PS_ZERO) as (keyof PerfectSyncWeights)[];
+const STD_KEYS = Object.keys(STD_ZERO) as (keyof StandardWeights)[];
+
 function lerpPS(delta: number): void {
   const t = Math.min(MOOD_LERP_SPEED * delta, 1);
-  for (const k of Object.keys(PS_ZERO) as (keyof PerfectSyncWeights)[]) {
+  for (let i = 0; i < PS_KEYS.length; i++) {
+    const k = PS_KEYS[i];
     _currentPS[k] += (_targetPS[k] - _currentPS[k]) * t;
   }
 }
 
 function lerpStd(delta: number): void {
   const t = Math.min(MOOD_LERP_SPEED * delta, 1);
-  for (const k of Object.keys(STD_ZERO) as (keyof StandardWeights)[]) {
+  for (let i = 0; i < STD_KEYS.length; i++) {
+    const k = STD_KEYS[i];
     _currentStd[k] += (_targetStd[k] - _currentStd[k]) * t;
   }
 }
 
 function applyPS(vrm: VRM, noise: number): void {
   const em = vrm.expressionManager!;
-  for (const [k, v] of Object.entries(_currentPS)) {
-    // Jangan timpa EyeBlinkLeft/Right saat sistem blink sedang aktif
-    if (getIsBlinking() && (k === 'EyeBlinkLeft' || k === 'EyeBlinkRight')) continue;
-    const val = Math.max(0, Math.min(1, v + (k.startsWith('mouthSmile') ? noise * 0.5 : 0)));
+  const isBlinking = getIsBlinking();
+  for (let i = 0; i < PS_KEYS.length; i++) {
+    const k = PS_KEYS[i];
+    if (isBlinking && (k === 'EyeBlinkLeft' || k === 'EyeBlinkRight')) continue;
+    const v = _currentPS[k];
+    const val = v < 0 ? 0 : v > 1 ? 1 : v + (k.startsWith('mouthSmile') ? noise * 0.5 : 0);
     try { em.setValue(k, val); } catch (_) { /* expression may not exist */ }
   }
 }
@@ -597,6 +606,30 @@ export function resetMouthExpressions(vrm: VRM): void {
 // 5. IDLE MICRO BODY GESTURES (chest-up only)
 // ============================================
 
+// Cache bone nodes per VRM instance to avoid repeated lookups every frame
+const _boneCache = new WeakMap<VRM, {
+  spine: THREE.Object3D | null;
+  chest: THREE.Object3D | null;
+  upperChest: THREE.Object3D | null;
+  head: THREE.Object3D | null;
+  neck: THREE.Object3D | null;
+}>();
+
+function getBones(vrm: VRM) {
+  let cached = _boneCache.get(vrm);
+  if (!cached) {
+    cached = {
+      spine:      vrm.humanoid.getNormalizedBoneNode('spine'),
+      chest:      vrm.humanoid.getNormalizedBoneNode('chest'),
+      upperChest: vrm.humanoid.getNormalizedBoneNode('upperChest'),
+      head:       vrm.humanoid.getNormalizedBoneNode('head'),
+      neck:       vrm.humanoid.getNormalizedBoneNode('neck'),
+    };
+    _boneCache.set(vrm, cached);
+  }
+  return cached;
+}
+
 export function updateIdleMicroGestures(
   elapsed: number,
   vrm: VRM,
@@ -605,12 +638,7 @@ export function updateIdleMicroGestures(
   if (!vrm.humanoid) return;
 
   const isDriven = (name: string) => !!drivenBones?.has(name);
-
-  const spine      = vrm.humanoid.getNormalizedBoneNode('spine');
-  const chest      = vrm.humanoid.getNormalizedBoneNode('chest');
-  const upperChest = vrm.humanoid.getNormalizedBoneNode('upperChest');
-  const head       = vrm.humanoid.getNormalizedBoneNode('head');
-  const neck       = vrm.humanoid.getNormalizedBoneNode('neck');
+  const { spine, chest, upperChest, head, neck } = getBones(vrm);
 
   if (spine && !isDriven('spine')) {
     spine.rotation.z += Math.sin(elapsed * 0.35) * 0.0002;
