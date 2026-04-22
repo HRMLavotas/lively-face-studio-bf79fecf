@@ -26,11 +26,13 @@ interface ChatPanelProps {
   onUserMessage?: (text: string) => void;
   voiceId?: string;
   personality?: string;
-  isPro?: boolean;
+  ttsProvider?: 'elevenlabs' | 'webspeech';
+  onTTSRateLimit?: () => void;
   isMobile?: boolean;
   isOpen?: boolean;
   onToggle?: () => void;
   onUnreadChange?: (hasUnread: boolean) => void;
+  isSpeaking?: boolean;
 }
 
 export default function ChatPanel({
@@ -39,16 +41,20 @@ export default function ChatPanel({
   onUserMessage,
   voiceId,
   personality,
-  isPro = false,
+  ttsProvider = 'webspeech',
+  onTTSRateLimit,
   isMobile = false,
   isOpen = true,
   onToggle,
   onUnreadChange,
+  isSpeaking = false,
 }: ChatPanelProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const isLoadingRef = useRef(false);
+  isLoadingRef.current = isLoading;
   const [isTTSLoading, setIsTTSLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [historySearch, setHistorySearch] = useState('');
@@ -66,24 +72,75 @@ export default function ChatPanel({
   const userLang = typeof window !== 'undefined' ? (localStorage.getItem('vrm.lang') ?? 'id') : 'id';
   const sttLang = userLang === 'auto' || !userLang ? 'id-ID' :
     ({ id: 'id-ID', en: 'en-US', ja: 'ja-JP', ko: 'ko-KR', zh: 'zh-CN', th: 'th-TH', vi: 'vi-VN' } as Record<string, string>)[userLang] ?? 'id-ID';
-  const stt = useSpeechRecognition(sttLang);
-  const [speechMode, setSpeechMode] = useState(false);
-  const speechModeRef = useRef(false);
-  speechModeRef.current = speechMode;
 
   // Ref to handleSend — populated after handleSend is defined below
   const handleSendRef = useRef<((text: string) => void) | null>(null);
 
-  // Auto-send when STT gets a final result in speech mode
-  useEffect(() => {
+  // Countdown before auto-send — resets every time a new speech segment arrives
+  const SEND_DELAY = 5; // seconds
+  const [sendCountdown, setSendCountdown] = useState<number | null>(null);
+  const sendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingTranscriptRef = useRef<string>('');
+
+  const cancelPendingSend = useCallback(() => {
+    if (sendTimerRef.current) { clearTimeout(sendTimerRef.current); sendTimerRef.current = null; }
+    if (countdownIntervalRef.current) { clearInterval(countdownIntervalRef.current); countdownIntervalRef.current = null; }
+    setSendCountdown(null);
+    pendingTranscriptRef.current = '';
+  }, []);
+
+  const scheduleSend = useCallback((text: string) => {
+    // Only schedule send if speech mode is active and not currently loading/speaking
     if (!speechModeRef.current) return;
-    if (stt.status !== 'processing') return;
-    const text = stt.transcript.trim();
-    if (!text) return;
-    stt.reset();
-    handleSendRef.current?.(text);
+    if (isLoadingRef.current) return; // don't queue while AI is responding
+
+    // Cancel previous timer — user is still speaking
+    if (sendTimerRef.current) clearTimeout(sendTimerRef.current);
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+
+    // Accumulate transcript segments
+    pendingTranscriptRef.current = pendingTranscriptRef.current
+      ? `${pendingTranscriptRef.current} ${text}`
+      : text;
+
+    // Restart countdown
+    setSendCountdown(SEND_DELAY);
+    countdownIntervalRef.current = setInterval(() => {
+      setSendCountdown(prev => (prev !== null && prev > 1 ? prev - 1 : null));
+    }, 1000);
+
+    sendTimerRef.current = setTimeout(() => {
+      clearInterval(countdownIntervalRef.current!);
+      countdownIntervalRef.current = null;
+      setSendCountdown(null);
+      const finalText = pendingTranscriptRef.current.trim();
+      pendingTranscriptRef.current = '';
+      if (finalText) handleSendRef.current?.(finalText);
+    }, SEND_DELAY * 1000);
+  }, [SEND_DELAY]);
+
+  const stt = useSpeechRecognition(sttLang, scheduleSend);
+  const [speechMode, setSpeechMode] = useState(false);
+  const speechModeRef = useRef(false);
+  speechModeRef.current = speechMode;
+
+  // Pause STT while TTS is speaking to prevent feedback loop
+  useEffect(() => {
+    if (!speechMode) return;
+    if (isSpeaking) {
+      // TTS started — stop mic to avoid capturing TTS output
+      stt.stop();
+      cancelPendingSend();
+    } else {
+      // TTS ended — resume listening
+      stt.start();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stt.status]);
+  }, [isSpeaking]);
+
+  // Cleanup timers on unmount
+  useEffect(() => () => cancelPendingSend(), [cancelPendingSend]);
 
   const {
     conversations, activeId, setActiveId, loading: convosLoading,
@@ -215,8 +272,9 @@ export default function ChatPanel({
             }
             setLastAssistantText(assistantSoFar);
             setIsTTSLoading(true);
-            const ttsResult = await generateTTS(ttsText, voiceId, 2, isPro);
+            const ttsResult = await generateTTS(ttsText, voiceId, 2, ttsProvider === 'elevenlabs');
             setIsTTSLoading(false);
+            if (ttsResult.source === 'webspeech' && ttsProvider === 'elevenlabs') onTTSRateLimit?.();
             if (ttsResult.url) onSpeakStart(ttsResult.url, assistantSoFar);
             else toast.error('TTS gagal', { action: { label: 'Coba lagi', onClick: () => handleRetryTTS(ttsText, assistantSoFar) } });
           }
@@ -234,15 +292,16 @@ export default function ChatPanel({
     const text = ttsText ?? lastAssistantText;
     if (!text) return;
     setIsTTSLoading(true);
-    const ttsResult = await generateTTS(text, voiceId, 2, isPro);
+    const ttsResult = await generateTTS(text, voiceId, 2, ttsProvider === 'elevenlabs');
     setIsTTSLoading(false);
+    if (ttsResult.source === 'webspeech' && ttsProvider === 'elevenlabs') onTTSRateLimit?.();
     if (ttsResult.url) {
       onSpeakStart(ttsResult.url, originalText ?? text);
       toast.success('Audio berhasil diputar');
     } else {
       toast.error('TTS masih gagal: ' + ttsResult.error);
     }
-  }, [lastAssistantText, voiceId, onSpeakStart]);
+  }, [lastAssistantText, voiceId, ttsProvider, onTTSRateLimit, onSpeakStart]);
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const text = (overrideText ?? input).trim();
@@ -301,8 +360,12 @@ export default function ChatPanel({
             loadConversations();
             setLastAssistantText(assistantSoFar);
             setIsTTSLoading(true);
-            const ttsResult = await generateTTS(ttsText, voiceId, 2, isPro);
+            const ttsResult = await generateTTS(ttsText, voiceId, 2, ttsProvider === 'elevenlabs');
             setIsTTSLoading(false);
+            if (ttsResult.source === 'webspeech' && ttsProvider === 'elevenlabs') {
+              // ElevenLabs fell back to Web Speech — notify parent to update provider state
+              onTTSRateLimit?.();
+            }
             if (ttsResult.url) {
               onSpeakStart(ttsResult.url, assistantSoFar);
             } else {
@@ -380,6 +443,13 @@ export default function ChatPanel({
           <span>{stt.transcript || 'Mendengarkan…'}</span>
         </div>
       )}
+      {/* Countdown before auto-send */}
+      {speechMode && sendCountdown !== null && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-secondary/60 border border-border/40 text-xs">
+          <span className="text-foreground/70 truncate flex-1">{pendingTranscriptRef.current}</span>
+          <span className="text-muted-foreground shrink-0">Kirim dalam {sendCountdown}s</span>
+        </div>
+      )}
       {speechMode && stt.error && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/20 text-xs text-destructive">
           <MicOff className="w-3.5 h-3.5 shrink-0" />
@@ -394,10 +464,9 @@ export default function ChatPanel({
           sttStatus={stt.status}
           sttSupported={stt.isSupported}
           onToggle={() => {
-            if (speechMode) { stt.reset(); setSpeechMode(false); }
-            else { setSpeechMode(true); }
+            if (speechMode) { cancelPendingSend(); stt.stop(); setSpeechMode(false); }
+            else { setSpeechMode(true); stt.start(); }
           }}
-          onStartListening={() => { stt.reset(); stt.start(); }}
         />
 
         <div className="flex-1">

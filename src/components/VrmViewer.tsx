@@ -16,6 +16,7 @@ import { detectMood } from '@/lib/sentiment';
 import { createMixer, playVRMA } from '@/lib/vrma-player';
 import { initLookAt, updateLookAt, setLookAtEnabled } from '@/lib/vrm-lookat';
 import { initSpringBones, updateSpringBones } from '@/lib/vrm-spring';
+import { getWebSpeechLipLevel } from '@/lib/web-speech-tts';
 import type { PlayVrmaOptions } from '@/lib/vrma-player';
 import {
   computeAdaptivePresets,
@@ -39,6 +40,7 @@ export interface VrmViewerHandle {
 interface VrmViewerProps {
   modelUrl: string;
   isSpeaking?: boolean;
+  isWebSpeechActive?: boolean;
   audioElement?: HTMLAudioElement | null;
   currentMessage?: string;
   className?: string;
@@ -46,7 +48,7 @@ interface VrmViewerProps {
 }
 
 const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer(
-  { modelUrl, isSpeaking = false, audioElement, currentMessage, className, getAudioLevel },
+  { modelUrl, isSpeaking = false, isWebSpeechActive = false, audioElement, currentMessage, className, getAudioLevel },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -236,6 +238,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // Keep getAudioLevel stable across renders
   const getAudioLevelRef = useRef<(() => number) | undefined>(getAudioLevel);
   getAudioLevelRef.current = getAudioLevel;
+  const isWebSpeechActiveRef = useRef(isWebSpeechActive);
+  isWebSpeechActiveRef.current = isWebSpeechActive;
 
   // ── Render loop ───────────────────────────────────────────────────────────
   const animate = useCallback(() => {
@@ -285,7 +289,10 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       // 5. Lip sync
       if (isSpeakingRef.current) {
         vrm.expressionManager?.setValue('aa', 0);
-        updateLipSync(getAudioLevelRef.current?.() ?? 0, vrm, delta);
+        const level = isWebSpeechActiveRef.current
+          ? getWebSpeechLipLevel(delta)
+          : (getAudioLevelRef.current?.() ?? 0);
+        updateLipSync(level, vrm, delta);
       }
 
       // 5. Apply all expression weights to morph targets
@@ -347,17 +354,34 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     camera.lookAt(0, 0.95, 0);
     cameraRef.current = camera;
 
+    // Check WebGL support before attempting to create renderer
+    const canvas = document.createElement('canvas');
+    const webgl2 = canvas.getContext('webgl2');
+    const webgl1 = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!webgl2 && !webgl1) {
+      setError('WebGL tidak didukung di browser ini. Coba aktifkan hardware acceleration di pengaturan browser.');
+      setLoading(false);
+      return;
+    }
+
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({
         antialias: !isMobile,
         alpha: true,
         powerPreference: 'high-performance',
+        // Fallback to WebGL1 if WebGL2 not available
+        ...(webgl2 ? {} : { context: webgl1 as WebGLRenderingContext }),
       });
     } catch (e) {
-      setError('WebGL is not supported in this environment.');
-      setLoading(false);
-      return;
+      // Second attempt: minimal settings
+      try {
+        renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
+      } catch (e2) {
+        setError('WebGL tidak dapat diinisialisasi. Pastikan hardware acceleration diaktifkan di browser Anda.');
+        setLoading(false);
+        return;
+      }
     }
 
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -508,8 +532,21 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         </div>
       )}
       {error && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-sm text-destructive font-mono">{error}</span>
+        <div className="absolute inset-0 flex items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-3 text-center max-w-xs">
+            <span className="text-2xl">⚠️</span>
+            <span className="text-sm text-destructive font-mono">{error}</span>
+            {error.toLowerCase().includes('webgl') && (
+              <a
+                href="https://get.webgl.org/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary underline"
+              >
+                Cek dukungan WebGL browser Anda
+              </a>
+            )}
+          </div>
         </div>
       )}
     </div>

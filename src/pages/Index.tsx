@@ -20,6 +20,7 @@ import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { parseAnimTag, isWebSpeechUrl, getWebSpeechText } from '@/lib/chat-api';
 import { speakWithWebSpeech, stopWebSpeech, preloadVoices } from '@/lib/web-speech-tts';
+import { useTTSProvider } from '@/hooks/useTTSProvider';
 import type { VrmViewerHandle, CameraPreset } from '@/components/VrmViewer';
 import type { LangCode } from '@/lib/lang-detect';
 
@@ -29,10 +30,12 @@ export default function Index() {
   const isMobile = useIsMobile();
   const { user } = useAuth();
   const { isPro } = useUserRole();
+  const { activeProvider, handleRateLimit } = useTTSProvider(isPro);
 
   // Preload Web Speech voices on mount
   useEffect(() => { preloadVoices(); }, []);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isWebSpeechActive, setIsWebSpeechActive] = useState(false);
   const [audioEl, setAudioEl] = useState<HTMLAudioElement | null>(null);
   const [modelUrl, setModelUrl] = useState('');
   const [voiceId, setVoiceId] = useState<string | undefined>(undefined);
@@ -118,41 +121,12 @@ export default function Index() {
       if (!audio) return;
       if (!audioConnected) setAudioConnected(true);
 
-      // Check if this is a Web Speech fallback URL
-      if (isWebSpeechUrl(audioUrl)) {
-        const text = getWebSpeechText(audioUrl);
-        stopWebSpeech(); // stop any ongoing speech
-        speakWithWebSpeech(text, {
-          onStart: () => setIsSpeaking(true),
-          onEnd:   () => setIsSpeaking(false),
-          onError: () => setIsSpeaking(false),
-        });
-        // Still trigger animations
-        if (messageText) {
-          setSpokenMessage(messageText);
-          const { animName } = parseAnimTag(messageText);
-          let triggered = false;
-          if (animName) {
-            const byName = findClipByName(animName);
-            if (byName && viewerRef.current?.isVrmLoaded()) {
-              viewerRef.current.playVrmaUrl(byName.url, { loop: false, fadeIn: 0.4 }).catch(console.warn);
-              triggered = true;
-            }
-          }
-          if (!triggered) {
-            const match = findMatch(messageText, userLangPref);
-            if (match && viewerRef.current?.isVrmLoaded()) {
-              viewerRef.current.playVrmaUrl(match.url, { loop: false, fadeIn: 0.4 }).catch(console.warn);
-            }
-          }
-        }
-        return;
-      }
-
-      // Regular audio URL (ElevenLabs)
+      // Always stop both audio sources before starting a new one
       audio.pause();
-      audio.src = audioUrl;
+      audio.src = '';
+      stopWebSpeech();
 
+      // Trigger animations regardless of audio source
       if (messageText) {
         setSpokenMessage(messageText);
         const { animName } = parseAnimTag(messageText);
@@ -171,8 +145,22 @@ export default function Index() {
           }
         }
       }
-      setIsSpeaking(true);
-      audio.play().catch(() => setIsSpeaking(false));
+
+      if (isWebSpeechUrl(audioUrl)) {
+        // Web Speech path — ElevenLabs is NOT used
+        const text = getWebSpeechText(audioUrl);
+        speakWithWebSpeech(text, {
+          onStart: () => { setIsSpeaking(true); setIsWebSpeechActive(true); },
+          onEnd:   () => { setIsSpeaking(false); setIsWebSpeechActive(false); },
+          onError: () => { setIsSpeaking(false); setIsWebSpeechActive(false); },
+        });
+      } else {
+        // ElevenLabs path — Web Speech is NOT used
+        setIsWebSpeechActive(false);
+        audio.src = audioUrl;
+        setIsSpeaking(true);
+        audio.play().catch(() => setIsSpeaking(false));
+      }
     },
     [findMatch, findClipByName, userLangPref, audioConnected],
   );
@@ -181,6 +169,7 @@ export default function Index() {
     audioRef.current?.pause();
     stopWebSpeech();
     setIsSpeaking(false);
+    setIsWebSpeechActive(false);
   }, []);
 
   const handleUserMessage = useCallback(
@@ -247,6 +236,7 @@ export default function Index() {
               ref={viewerRef}
               modelUrl={modelUrl}
               isSpeaking={isSpeaking}
+              isWebSpeechActive={isWebSpeechActive}
               audioElement={audioEl}
               currentMessage={spokenMessage}
               getAudioLevel={audioConnected ? getAudioLevel : undefined}
@@ -314,12 +304,14 @@ export default function Index() {
           onSpeakEnd={handleSpeakEnd}
           onUserMessage={handleUserMessage}
           voiceId={voiceId}
-          isPro={isPro}
+          ttsProvider={activeProvider}
+          onTTSRateLimit={handleRateLimit}
           isMobile
           isOpen={chatOpen}
           onToggle={handleToggleChat}
           onUnreadChange={setHasUnread}
           personality={personality}
+          isSpeaking={isSpeaking}
         />
       ) : (
         chatOpen && (
@@ -329,9 +321,11 @@ export default function Index() {
               onSpeakEnd={handleSpeakEnd}
               onUserMessage={handleUserMessage}
               voiceId={voiceId}
-              isPro={isPro}
+              ttsProvider={activeProvider}
+              onTTSRateLimit={handleRateLimit}
               onUnreadChange={setHasUnread}
               personality={personality}
+              isSpeaking={isSpeaking}
             />
           </div>
         )

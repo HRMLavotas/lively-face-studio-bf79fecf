@@ -91,26 +91,24 @@ export async function streamChat({
 }
 
 /** Generate TTS with automatic retry on transient failures.
- * Falls back to Web Speech API if:
- * - isPro is false (free user)
- * - ElevenLabs returns rate limit (429)
- * - ElevenLabs fails after retries
+ * isPro=true  → try ElevenLabs, fall back to Web Speech on 429/error
+ * isPro=false → Web Speech directly, never calls ElevenLabs
  */
 export async function generateTTS(
   text: string,
   voiceId?: string,
   retries = 2,
-  isPro = true,
+  isPro = false,
 ): Promise<{ url: string; error: null; source: 'elevenlabs' | 'webspeech' } |
            { url: null;   error: string; source: 'none' }> {
   if (!isOnline()) return { url: null, error: "Tidak ada koneksi internet", source: 'none' };
 
-  // Free users always use Web Speech
+  // Web Speech only — never touch ElevenLabs
   if (!isPro) {
     return { url: 'webspeech://' + encodeURIComponent(text), error: null, source: 'webspeech' };
   }
 
-  // Pro users: try ElevenLabs first
+  // ElevenLabs with fallback
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/tts`, {
@@ -124,8 +122,7 @@ export async function generateTTS(
 
       if (!resp.ok) {
         if (resp.status === 429) {
-          // Rate limited — fall back to Web Speech
-          console.warn('[TTS] ElevenLabs rate limited, falling back to Web Speech');
+          // Rate limited — caller should handle provider switch
           return { url: 'webspeech://' + encodeURIComponent(text), error: null, source: 'webspeech' };
         }
         if (resp.status === 401 || resp.status === 403) return { url: null, error: "Auth error", source: 'none' };
@@ -133,7 +130,6 @@ export async function generateTTS(
           await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
           continue;
         }
-        // Server error after retries — fall back to Web Speech
         return { url: 'webspeech://' + encodeURIComponent(text), error: null, source: 'webspeech' };
       }
 
@@ -147,7 +143,6 @@ export async function generateTTS(
         await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
         continue;
       }
-      // Network error — fall back to Web Speech
       return { url: 'webspeech://' + encodeURIComponent(text), error: null, source: 'webspeech' };
     }
   }

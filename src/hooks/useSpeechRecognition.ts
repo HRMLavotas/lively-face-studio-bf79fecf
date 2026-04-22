@@ -9,7 +9,7 @@ export type SpeechRecognitionStatus =
 
 export interface UseSpeechRecognitionResult {
   status: SpeechRecognitionStatus;
-  transcript: string;        // interim + final combined
+  transcript: string;        // live interim transcript
   isSupported: boolean;
   start: () => void;
   stop: () => void;
@@ -17,23 +17,24 @@ export interface UseSpeechRecognitionResult {
   error: string | null;
 }
 
-// Browser SpeechRecognition API type shim
-type SpeechRecognitionAPI = typeof window extends { SpeechRecognition: infer T } ? T :
-  typeof window extends { webkitSpeechRecognition: infer T } ? T : never;
-
 function getSpeechRecognition(): (new () => SpeechRecognition) | null {
   if (typeof window === 'undefined') return null;
   return (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null;
 }
 
-export function useSpeechRecognition(lang?: string): UseSpeechRecognitionResult {
+export function useSpeechRecognition(
+  lang?: string,
+  /** Called every time a final speech segment is recognised */
+  onFinalSegment?: (text: string) => void,
+): UseSpeechRecognitionResult {
   const [status, setStatus] = useState<SpeechRecognitionStatus>('idle');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const isSupported = !!getSpeechRecognition();
+  const onFinalSegmentRef = useRef(onFinalSegment);
+  onFinalSegmentRef.current = onFinalSegment;
 
-  // Detect language from browser locale if not provided
+  const isSupported = !!getSpeechRecognition();
   const detectedLang = lang ?? (typeof navigator !== 'undefined' ? navigator.language : 'id-ID');
 
   const stop = useCallback(() => {
@@ -57,59 +58,51 @@ export function useSpeechRecognition(lang?: string): UseSpeechRecognitionResult 
       return;
     }
 
-    // Stop any existing session
     recognitionRef.current?.stop();
-
     setStatus('requesting');
     setTranscript('');
     setError(null);
 
     const recognition = new SR();
     recognition.lang = detectedLang;
-    recognition.continuous = false;       // single utterance
-    recognition.interimResults = true;    // show partial results
+    recognition.continuous = true;       // keep listening — don't stop after one utterance
+    recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    recognition.onstart = () => {
-      setStatus('listening');
-    };
+    recognition.onstart = () => setStatus('listening');
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interim = '';
-      let final = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         if (result.isFinal) {
-          final += result[0].transcript;
+          const text = result[0].transcript.trim();
+          if (text) onFinalSegmentRef.current?.(text);
         } else {
           interim += result[0].transcript;
         }
       }
-      setTranscript(final || interim);
-      if (final) setStatus('processing');
+      // Show live interim text
+      setTranscript(interim);
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       const msg: Record<string, string> = {
-        'not-allowed':    'Akses mikrofon ditolak. Izinkan di pengaturan browser.',
-        'no-speech':      'Tidak ada suara terdeteksi. Coba lagi.',
-        'audio-capture':  'Mikrofon tidak ditemukan.',
-        'network':        'Error jaringan saat mengenali suara.',
-        'aborted':        '',
+        'not-allowed':   'Akses mikrofon ditolak. Izinkan di pengaturan browser.',
+        'no-speech':     'Tidak ada suara terdeteksi.',
+        'audio-capture': 'Mikrofon tidak ditemukan.',
+        'network':       'Error jaringan saat mengenali suara.',
+        'aborted':       '',
       };
       const errMsg = msg[event.error] ?? `Error: ${event.error}`;
-      if (errMsg) {
-        setError(errMsg);
-        setStatus('error');
-      } else {
-        setStatus('idle');
-      }
+      if (errMsg) { setError(errMsg); setStatus('error'); }
+      else setStatus('idle');
       recognitionRef.current = null;
     };
 
     recognition.onend = () => {
       recognitionRef.current = null;
-      setStatus(prev => prev === 'listening' || prev === 'requesting' ? 'idle' : prev);
+      setStatus(prev => (prev === 'listening' || prev === 'requesting' ? 'idle' : prev));
     };
 
     recognitionRef.current = recognition;
@@ -122,13 +115,7 @@ export function useSpeechRecognition(lang?: string): UseSpeechRecognitionResult 
     }
   }, [detectedLang]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      recognitionRef.current?.stop();
-      recognitionRef.current = null;
-    };
-  }, []);
+  useEffect(() => () => { recognitionRef.current?.stop(); recognitionRef.current = null; }, []);
 
   return { status, transcript, isSupported, start, stop, reset, error };
 }

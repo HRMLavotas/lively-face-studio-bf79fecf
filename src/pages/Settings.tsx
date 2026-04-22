@@ -6,9 +6,14 @@ import { ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
 import ModelManager from '@/components/ModelManager';
 import VoiceSelector from '@/components/VoiceSelector';
 import LanguagePreference from '@/components/LanguagePreference';
+import TTSSettings from '@/components/TTSSettings';
+import { useTTSProvider } from '@/hooks/useTTSProvider';
+import { useUserRole } from '@/hooks/useUserRole';
 
 export default function Settings() {
   const navigate = useNavigate();
+  const { isPro } = useUserRole();
+  const { provider, rateLimited, setProvider } = useTTSProvider(isPro);
   const [models, setModels] = useState<any[]>([]);
   const [voices, setVoices] = useState<any[]>([]);
 
@@ -59,6 +64,13 @@ export default function Settings() {
         <ModelManager models={models} onRefresh={fetchModels} />
         <div className="border-t border-border/40" />
         <VoiceSelector voices={voices} onRefresh={fetchVoices} />
+        <div className="border-t border-border/40" />
+        <TTSSettings
+          isPro={isPro}
+          provider={provider}
+          rateLimited={rateLimited}
+          onProviderChange={setProvider}
+        />
         <div className="border-t border-border/40" />
         <LanguagePreference />
       </div>
