@@ -165,7 +165,13 @@ export function createMixer(vrm: VRM): THREE.AnimationMixer {
   return mixer;
 }
 
-/** Play a clip with optional fade-in. Returns the action so caller can monitor it. */
+/**
+ * Play a clip with cross-fade from the currently active actions.
+ * Does NOT call stopAllAction/uncacheRoot synchronously — that causes a
+ * 1-frame T-pose flash. Instead, fadeOut old actions while fadeIn the new
+ * one so THREE blends bones smoothly. Cleanup of old actions happens after
+ * the cross-fade completes.
+ */
 export function playVRMA(
   mixer: THREE.AnimationMixer | null,
   clip: THREE.AnimationClip,
@@ -175,34 +181,57 @@ export function playVRMA(
     console.warn('playVRMA: mixer is null, skipping');
     return null;
   }
-  const { loop = false, fadeIn = 0 } = opts;
+  const { loop = false, fadeIn = 0.4 } = opts;
 
-  // Stop + fully uncache ALL previous clips so old actions don't bleed into the new pose
+  // Snapshot currently-running actions BEFORE creating the new one so we
+  // can fade them out and clean them up after the cross-fade completes.
+  const prevActions: THREE.AnimationAction[] = [];
   try {
-    mixer.stopAllAction();
-    const root = mixer.getRoot() as THREE.Object3D;
-    // Uncache root removes every action bound to this mixer's root
-    mixer.uncacheRoot(root);
-  } catch (e) {
-    console.warn('playVRMA: cleanup failed (safe to ignore):', e);
-  }
+    const all = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
+    for (const a of all) {
+      // Active = currently contributing weight to the pose
+      if (a.isRunning() || a.getEffectiveWeight() > 0.001) {
+        prevActions.push(a);
+      }
+    }
+  } catch (_) { /* ok */ }
 
   const action = mixer.clipAction(clip);
   action.reset();
   action.enabled = true;
   action.timeScale = 1;
-  action.weight = 1;
   action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
   action.clampWhenFinished = true;
 
-  if (fadeIn > 0) {
-    action.setEffectiveWeight(1);
+  // Cross-fade: ramp old actions to 0 while new action ramps to 1.
+  if (fadeIn > 0 && prevActions.length > 0) {
+    for (const prev of prevActions) {
+      // Don't double-fade if the same action object somehow.
+      if (prev === action) continue;
+      try { prev.fadeOut(fadeIn); } catch (_) { /* ok */ }
+    }
+    action.setEffectiveWeight(0);
     action.fadeIn(fadeIn);
+  } else {
+    action.setEffectiveWeight(1);
+    action.weight = 1;
   }
 
   action.play();
 
-  console.log('[VRMA] Action started — duration:', clip.duration.toFixed(2), 's, loop:', loop);
+  // Schedule cleanup of old actions AFTER the cross-fade completes so they
+  // don't leak. We stop them (no-op if already stopped) — keep the clips
+  // cached for fast re-use.
+  if (prevActions.length > 0) {
+    setTimeout(() => {
+      for (const prev of prevActions) {
+        if (prev === action) continue;
+        try { prev.stop(); } catch (_) { /* ok */ }
+      }
+    }, Math.max(50, fadeIn * 1000 + 30));
+  }
+
+  console.log('[VRMA] Action cross-faded in — duration:', clip.duration.toFixed(2), 's, loop:', loop, 'prev actions faded:', prevActions.length);
   return action;
 }
 
