@@ -415,13 +415,14 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl, loading, switchIdleClip]);
 
-  // ── Play talking VRMA when TTS starts, return to rest when TTS ends ──────
+  // ── Play talking VRMA when TTS starts, cross-fade back to idle when ends ──
   useEffect(() => {
     const vrm = vrmRef.current;
     const mixer = mixerRef.current;
 
     if (isSpeaking) {
-      // If external VRMA is playing (e.g. admin preview), don't override it
+      // If external VRMA is playing (e.g. admin preview / AI-chosen gesture),
+      // don't override it — let it finish, then talking takes over.
       if (vrmaActionRef.current) return;
 
       const clips = talkingClipsRef.current;
@@ -429,6 +430,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
       isReturnToRestRef.current = false;
       isTalkingPlayingRef.current = true;
+      // Mark idle as paused so the loop counter stops trying to switch idle clips.
+      idlePausedForActivityRef.current = true;
 
       const playNext = () => {
         if (!isTalkingPlayingRef.current) return;
@@ -441,8 +444,18 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         talkingClipIndexRef.current = (talkingClipIndexRef.current + 1) % clips.length;
 
         vrmaPlayingRef.current = true;
-        const action = playVRMA(mixer, clip, { loop: false, fadeIn: 0.3 });
+        // Cross-fade from idle (or previous talking clip) into this one.
+        // First clip uses 0.4s (idle→talking), subsequent clips 0.5s (talking→talking).
+        const isFirst = idleActionRef.current?.isRunning() ?? false;
+        const action = playVRMA(mixer, clip, { loop: false, fadeIn: isFirst ? 0.4 : 0.5 });
         if (!action) { vrmaPlayingRef.current = false; return; }
+        // Once cross-fade is past, idle action will be at weight 0 — clear the ref
+        // so restartIdleLoop creates a fresh action when needed.
+        if (isFirst) {
+          setTimeout(() => {
+            idleActionRef.current = null;
+          }, 450);
+        }
         activeDrivenBonesRef.current = getClipDrivenBones(clip);
 
         // When this clip ends, play next (loop through talking clips)
@@ -460,20 +473,33 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
       playNext();
     } else {
-      // TTS ended — stop talking animation and return to rest pose
+      // TTS ended — cross-fade from talking back to idle clip (no T-pose flash).
       if (isTalkingPlayingRef.current) {
         isTalkingPlayingRef.current = false;
-        isReturnToRestRef.current = true;
+        idlePausedForActivityRef.current = false;
 
-        if (vrm && mixer && vrmaPlayingRef.current) {
-          returnToRestPose(mixer, vrm, 0.6).then(() => {
+        const clips = idleClipsRef.current;
+        if (mixer && clips.length > 0) {
+          // Cross-fade directly to current idle clip — playVRMA handles fadeOut
+          // of the talking action while fadeIn the idle one.
+          const idleClip = clips[idleCurrentIndexRef.current % clips.length];
+          idleClipRef.current = idleClip;
+          const idleAction = playVRMA(mixer, idleClip, { loop: true, fadeIn: 0.5 });
+          if (idleAction) {
+            idleActionRef.current = idleAction;
+            vrmaPlayingRef.current = true;
+            activeDrivenBonesRef.current = getClipDrivenBones(idleClip);
+          } else {
+            vrmaPlayingRef.current = false;
+          }
+        } else if (vrm && mixer && vrmaPlayingRef.current) {
+          // Fallback: no idle clips loaded — fade everything out to rest pose.
+          isReturnToRestRef.current = true;
+          returnToRestPose(mixer, vrm, 0.5).then(() => {
             vrmaPlayingRef.current = false;
             isReturnToRestRef.current = false;
-            // Restart idle loop after returning to rest
             restartIdleLoop();
           });
-        } else {
-          restartIdleLoop();
         }
       }
 
