@@ -1,119 +1,65 @@
 
 
-## Plan: Fix T-pose flash + smart AI-driven animation selection
+## Plan: Hilangkan T-pose saat TTS dengan memperbaiki cross-fade source
 
-### Akar masalah saat ini
+### Akar masalah (dari log + code review)
 
-**1. Flash T-pose saat TTS / transisi**
-Di `src/lib/vrma-player.ts` fungsi `playVRMA()` memanggil `mixer.stopAllAction()` + `mixer.uncacheRoot(root)` **sebelum** action baru di-`fadeIn`. Karena uncache menghapus semua action dalam 1 frame, ada window singkat di mana tidak ada action ber-weight → bones snap ke bind pose (T-pose). Ini terjadi setiap transisi: idle→talking, antar talking-clip, gesture→talking.
+Saat user kirim "aku cape bgt banyak kerjaan", flow sebenarnya:
 
-**2. Pemilihan animasi acak / tidak nyambung**
-`useVrmaTriggers.findMatch()` cuma cocokkan keyword string. Untuk pesan AI seperti "...semoga harimu jauh lebih lancar dan ada hal seru...", kata "seru" / "asik" / "keren" / "wah" gampang trigger Cheering/Surprise walau konteks emosi user sedih. AI tidak tahu daftar animasi yang tersedia — keyword matcher buta konteks.
+1. `isSpeaking=true` → talking effect mulai cross-fade dari idle ke talking clip 1 (20.75s, loop=false). `prev actions faded: 1` ✓
+2. AI-tag trigger `Sad Idle 1` via `playVrmaUrl` → cross-fade ke Sad Idle (2.75s). `prev actions faded: 1` ✓ — tapi **`isTalkingPlayingRef` di-set false** (line 644)
+3. Sad Idle selesai → masuk handler `onFinished` (line 646). Karena `isTalkingPlayingRef=false`, masuk branch idle → cross-fade ke idle clip (9.92s loop). **Log: `prev actions faded: 0`** ❌
 
-**3. Build error**
-`src/components/VrmaLibrary.tsx` line 247-248 masih pakai `editState.keywords` (field lama) padahal `EditState` sekarang `keywordsByLang`.
+Kenapa `prev=0`? Dua sebab bertumpuk:
 
----
+**A. Cleanup `setTimeout` di `playVRMA` (vrma-player.ts:225-232)** memanggil `prev.stop()` setelah `fadeIn*1000+30ms`. Action yang sudah di-stop punya `isRunning()=false` dan `getEffectiveWeight()=0` → tidak masuk snapshot saat cross-fade berikutnya → tidak ada pose source → bones snap ke bind pose (T-pose) selama fadeIn.
 
-### Bagian 1 — Fix T-pose flash (cross-fade, tidak uncache)
+**B. `isTalkingPlayingRef=false` di line 644** membuat sistem lupa bahwa TTS masih berjalan. Akibatnya setelah Sad Idle selesai sambil TTS masih `isSpeaking=true`, talking loop tidak resume — malah loncat ke idle → terlihat T-pose lama lalu idle.
 
-Ubah `playVRMA()` di `src/lib/vrma-player.ts`:
-- **Hapus** `mixer.stopAllAction()` + `mixer.uncacheRoot(root)` di awal.
-- Sebagai gantinya: ambil daftar action yang sedang aktif → `fadeOut(crossfadeDuration)` semuanya, lalu `fadeIn` action baru di durasi yang sama. Three.js akan blend bones secara mulus dari pose lama ke pose baru tanpa pernah ke bind pose.
-- Setelah `fadeIn` selesai (via `setTimeout(duration*1000)`), baru cleanup action lama (`stop()` + `uncacheClip()` per action lama) untuk hindari memory leak.
-- Default `fadeIn` naikkan jadi `0.4s` untuk semua transisi (talking, gesture, idle switch). Antar-talking-clip pakai `0.5s`.
+Bonus issue: `playVRMA` saat dipanggil oleh `playVrmaUrl` di line 635 menerima `opts` tanpa `fadeIn` default → pakai 0.4 ✓, tapi karena prev action masih ada saat itu, fadeIn jalan. Tapi onFinished branch (line 659) hardcoded 0.5 fadeIn — masalahnya bukan durasi, tapi tidak ada source action.
 
-Update `VrmViewer.tsx`:
-- Saat `isSpeaking` jadi `true`: idle action **tidak di-stop** dulu — biarkan `playVRMA` cross-fade dari idle ke talking. Tandai `idlePausedForActivityRef = true` setelah cross-fade selesai supaya loop tidak dilanjutkan.
-- Saat `isSpeaking` jadi `false`: gunakan `playVRMA` lagi untuk cross-fade dari talking kembali ke idle clip (bukan `returnToRestPose` lalu start dari nol). Hapus pemanggilan `returnToRestPose` di flow normal — itu yang justru bikin avatar ke rest sejenak. Sisakan `returnToRestPose` hanya untuk skenario fallback (model unmount).
-- Sama untuk transisi gesture→talking dan gesture→idle: pakai cross-fade.
+### Perbaikan
 
-### Bagian 2 — AI memilih animasi (semantic, bukan keyword)
+**1. `src/lib/vrma-player.ts` — cleanup yang aman untuk cross-fade berikutnya**
 
-Buat AI yang menulis balasan **sekaligus** memilih animasi yang paling cocok dari library yang tersedia. Ini menyelesaikan masalah random/tidak nyambung secara permanen.
+Ganti strategi cleanup. Daripada `prev.stop()` setelah fadeIn selesai (yang membuat action invisible untuk cross-fade berikutnya), gunakan pendekatan: biarkan THREE.js auto-handle weight=0 actions, dan lakukan cleanup hanya saat action benar-benar tidak akan dipakai lagi (uncache clip lama hanya jika clip berbeda dari clip baru).
 
-**A. Edge function `chat/index.ts` — inject animation catalog ke system prompt**
-- Sebelum panggil AI, query daftar animasi aktif (selain `talking` & `idle`):
-  ```sql
-  SELECT name, category FROM vrma_animations 
-  WHERE is_active = true AND category NOT IN ('talking','idle')
-  ORDER BY category, name;
-  ```
-- Bangun bagian system prompt:
-  ```
-  You can express emotion via ONE animation per reply.
-  Available animations (pick at most one — name MUST match exactly, or "none"):
-  greeting: Waving, Standing Greeting
-  emote: Thankful, Cheering, Bashful, Pouting, Blow A Kiss, ...
-  reaction: Sad Idle 1, Disappointed, Angry, Surprise, Bored, Wiping Sweat, ...
-  gesture: Acknowledging, Agreeing, Thinking, Pointing, Salute, Shaking Head No, ...
-  
-  At the END of your reply, append on its own line exactly:
-  [ANIM:<exact name>]    (or [ANIM:none] if no animation fits)
-  
-  Pick based on the EMOTIONAL TONE of YOUR reply, not the user's mood:
-  - User sedih → kamu prihatin → reaction "Wiping Sweat" / emote "Bashful" (NOT Cheering/Surprise)
-  - User cerita lucu → emote "Cheering" / "Happy Hand Gesture"
-  - User tanya / kamu ragu → gesture "Thinking"
-  - User salam → greeting "Waving"
-  - User berterima kasih → emote "Thankful"
-  ```
-- Stream response apa adanya (frontend yang parse tag).
+Konkret:
+- Hapus `setTimeout(...)` cleanup yang memanggil `prev.stop()` di line 225-232.
+- Sebagai gantinya: action lama yang weight-nya sudah 0 setelah fadeOut akan tetap di `_actions` array dengan `isRunning()=true` tapi `getEffectiveWeight()=0`. Itu **OK** — tidak mengganggu pose dan masih bisa jadi reference untuk cross-fade berikutnya kalau weight belum benar-benar 0.
+- Ubah snapshot di playVRMA: ambil action yang `getEffectiveWeight() > 0.001` **OR** masih dalam fade transition (cek `_weightInterpolant` ada). Lebih aman: ambil semua action di `_actions` yang `enabled=true` dan `time > 0` — biarkan THREE blend mereka turun.
 
-**B. Frontend parse `[ANIM:...]` tag**
-- Di `src/lib/chat-api.ts` (atau di `Index.tsx` saat `onDone`): regex `/\[ANIM:([^\]]+)\]\s*$/` ambil nama, lalu **strip tag** dari teks sebelum kirim ke TTS.
-- Tambah method baru `findClipByName(name)` di `useVrmaTriggers` yang return `{ url, clip }` dari list yang sudah dimuat. Match case-insensitive trim.
-- Di `Index.tsx` handler `onDone` (sebelum TTS):
-  1. Parse tag dari `assistantSoFar`.
-  2. Strip tag dari teks → kirim teks bersih ke TTS.
-  3. Kalau ada nama → `viewerRef.current.playVrmaUrl(url, { fadeIn: 0.4 })` **bersamaan** dengan TTS start.
-  4. Kalau tidak ada / `none` → biarkan talking loop default.
+Lebih sederhana: **jangan pernah stop action otomatis**. Cukup biarkan `mixer.clipAction(clip)` mengembalikan action yang sama (cached) jika dipanggil lagi dengan clip yang sama. Memory leak minimal karena clip count terbatas (~120 clips). Hapus `setTimeout` cleanup sepenuhnya.
 
-**C. User message tetap pakai keyword matcher (sebagai instant feedback)**
-- User kirim "halo" → langsung wave sebelum AI reply (low-latency hint). Tetap pakai `findMatch()` existing dengan threshold ketat: hanya kategori `greeting` + `emote` yang sangat eksplisit (Thankful, Bashful). Skip `reaction` & `gesture` ambiguous untuk user message — biar AI yang putuskan reaction yang tepat di reply.
-- Tambah whitelist kategori di `findMatch(text, lang, allowedCategories?)`.
+**2. `src/components/VrmViewer.tsx` — jangan reset `isTalkingPlayingRef` saat AI-gesture**
 
-### Bagian 3 — Fix build error VrmaLibrary
+Di `playVrmaUrl` (line 644), JANGAN set `isTalkingPlayingRef.current = false` jika TTS masih berjalan (`isSpeakingRef.current === true`). Cukup set `vrmaActionRef.current` ke action gesture; `playNext()` di talking effect sudah punya guard `if (vrmaActionRef.current) return` — jadi talking tidak akan double-trigger.
 
-Di `src/components/VrmaLibrary.tsx` line 226-269 (edit mode UI), ganti single `Input` keyword dengan **Tabs per bahasa** (sesuai rencana multilingual sebelumnya yang belum selesai):
+Di `onFinished` handler (line 646-672), ubah branch:
+- Kalau `isSpeakingRef.current === true` → langsung resume talking dengan `playNext()` style call. Caranya: panggil ulang `playVRMA(mixer, talkingClips[idx], { loop: false, fadeIn: 0.4 })` di sini, attach finished listener untuk lanjut talking-loop. Atau lebih bersih: extract `playNextTalking()` jadi callback yang bisa dipanggil dari mana saja.
+- Kalau tidak speaking → cross-fade ke idle (existing).
 
-```tsx
-<Tabs defaultValue="id">
-  <TabsList className="h-7">
-    {LANGS.map(l => <TabsTrigger key={l} value={l} className="text-[10px] px-2">{LANG_LABEL[l]}</TabsTrigger>)}
-  </TabsList>
-  {LANGS.map(l => (
-    <TabsContent key={l} value={l} className="mt-1">
-      <Input
-        className="h-7 text-xs"
-        placeholder={`keyword ${LANG_LABEL[l]}, koma`}
-        value={editState.keywordsByLang[l]}
-        onChange={(e) => setEditState(s => ({
-          ...s,
-          keywordsByLang: { ...s.keywordsByLang, [l]: e.target.value }
-        }))}
-      />
-    </TabsContent>
-  ))}
-</Tabs>
-```
+**3. `VrmViewer.tsx` — saat TTS berakhir, pastikan source pose ada**
 
-Pastikan `saveEdit()` (yang sudah ada) sudah build object `trigger_keywords_i18n` dari `keywordsByLang` + flatten ke `trigger_keywords`. Kalau belum, perbaiki juga.
+Di line 477-504 (TTS ended branch), saat memanggil `playVRMA(mixer, idleClip, { loop: true, fadeIn: 0.5 })`, **pastikan talking action terakhir masih punya weight > 0**. Karena fix #1 menghapus auto-stop, talking action terakhir akan masih running dengan weight=1 → cross-fade jalan benar.
+
+**4. Refactor minor: extract `playNextTalking` jadi useCallback**
+
+Pindahkan inline `playNext` (line 436-472) jadi `playNextTalking` useCallback supaya bisa dipanggil dari `onFinished` gesture handler. Ini menghilangkan duplikasi & memastikan talking resume mulus pasca-gesture.
 
 ### File yang diubah
 
-- `src/lib/vrma-player.ts` — `playVRMA` cross-fade tanpa uncache; helper baru `crossFadeTo()`.
-- `src/components/VrmViewer.tsx` — pakai cross-fade di transisi idle/talking/gesture; hapus `returnToRestPose` dari flow normal.
-- `supabase/functions/chat/index.ts` — query animation catalog + inject ke system prompt + instruksi `[ANIM:name]`.
-- `src/lib/chat-api.ts` — util `parseAnimTag(text): { clean, animName | null }`.
-- `src/hooks/useVrmaTriggers.ts` — tambah `findClipByName(name)` + parameter opsional `allowedCategories` di `findMatch`.
-- `src/pages/Index.tsx` — di alur reply: parse tag → strip → trigger animation by name; di `handleUserMessage` whitelist kategori greeting+emote saja.
-- `src/components/VrmaLibrary.tsx` — fix `EditState` UI ke Tabs multilingual (juga selesaikan build error).
+- **`src/lib/vrma-player.ts`** — hapus `setTimeout` auto-stop di `playVRMA` (line 222-232). Tambah comment menjelaskan kenapa kita biarkan action tetap ada (THREE menangani weight=0).
+- **`src/components/VrmViewer.tsx`** — 
+  - Extract `playNextTalking` jadi `useCallback`.
+  - Di `playVrmaUrl`: ganti `isTalkingPlayingRef.current = false` jadi `if (!isSpeakingRef.current) isTalkingPlayingRef.current = false`.
+  - Di `onFinished` handler gesture: jika `isSpeakingRef.current && talkingClips.length > 0` → panggil `playNextTalking()` (resume talking), bukan jatuh ke idle.
 
 ### Hasil yang diharapkan
 
-1. ✅ Tidak ada lagi flash T-pose saat TTS mulai/berakhir atau saat ganti talking clip — semua transisi cross-fade halus 0.4s.
-2. ✅ AI memilih animasi yang **kontekstual** dari library (tahu nama persisnya). Untuk kasus user cerita sial → AI prihatin → animasi `Wiping Sweat` / `Bashful` / `Sad Idle`, bukan Cheering/Surprise.
-3. ✅ User keyword tetap memberi feedback instan untuk salam & ucapan eksplisit, tanpa kontaminasi reaction yang ambigu.
-4. ✅ Build hijau, admin bisa edit keyword multilingual via tabs.
+1. ✅ Tidak ada flash T-pose lagi saat TTS mulai (idle → talking) — fix sudah ada, akan stabil setelah cleanup di-hapus.
+2. ✅ Tidak ada T-pose saat AI-tag gesture muncul di tengah TTS — talking action lama tetap jadi source pose untuk cross-fade gesture.
+3. ✅ Setelah gesture (Sad Idle) selesai DAN TTS masih ngomong → otomatis lanjut ke talking clip berikutnya, BUKAN loncat ke idle yang kosong source-nya.
+4. ✅ Setelah TTS selesai → cross-fade halus dari talking terakhir ke idle clip (source pose tersedia).
+5. ✅ Memory tetap terkendali karena `clipAction(clip)` cached dan jumlah clip aktif terbatas (~120).
 
