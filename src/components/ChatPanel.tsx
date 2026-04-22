@@ -1,17 +1,15 @@
 import { useState, useRef, useEffect, memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Volume2, ChevronUp, X } from 'lucide-react';
+import { Send, Volume2, ChevronDown, X, Bot, User } from 'lucide-react';
 import { streamChat, generateTTS, parseAnimTag, type ChatMessage } from '@/lib/chat-api';
 import { toast } from 'sonner';
 
 interface ChatPanelProps {
   onSpeakStart: (audioUrl: string, messageText?: string) => void;
   onSpeakEnd: () => void;
-  /** Fired immediately when the user sends a message — lets the avatar react
-   *  to the user's mood before the AI reply arrives. */
   onUserMessage?: (text: string) => void;
   voiceId?: string;
   personality?: string;
@@ -37,14 +35,16 @@ export default function ChatPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [isTTSLoading, setIsTTSLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
+  const scrollToBottom = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  };
 
-  // Clear unread when chat opens
+  useEffect(() => { scrollToBottom(); }, [messages]);
+
   useEffect(() => {
     if (isOpen && onUnreadChange) onUnreadChange(false);
   }, [isOpen, onUnreadChange]);
@@ -53,17 +53,18 @@ export default function ChatPanel({
     const text = input.trim();
     if (!text || isLoading) return;
 
-    // Notify parent so the avatar can react to the user's emotional cue
-    // immediately, before AI/TTS round-trip completes.
     onUserMessage?.(text);
-
     const userMsg: ChatMessage = { role: 'user', content: text };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
 
-    let assistantSoFar = '';
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
 
+    let assistantSoFar = '';
     const upsertAssistant = (chunk: string) => {
       assistantSoFar += chunk;
       setMessages((prev) => {
@@ -82,34 +83,21 @@ export default function ChatPanel({
         systemPrompt: personality,
         onDone: async () => {
           setIsLoading(false);
-          // Notify parent of unread reply when chat is hidden on mobile
-          if (isMobile && !isOpen && onUnreadChange) {
-            onUnreadChange(true);
-          }
+          if (isMobile && !isOpen && onUnreadChange) onUnreadChange(true);
           if (assistantSoFar) {
-            // Strip the [ANIM:<name>] tag (if any) before sending to TTS so
-            // the synth doesn't read "ANIM colon waving" out loud. Pass the
-            // ORIGINAL text to onSpeakStart so Index can re-parse the tag
-            // and trigger the right animation.
             const { clean } = parseAnimTag(assistantSoFar);
             const ttsText = clean || assistantSoFar;
-            // Also update the visible bubble so the tag never shows in chat UI.
             if (clean !== assistantSoFar) {
               setMessages((prev) =>
                 prev.map((m, i) =>
-                  i === prev.length - 1 && m.role === 'assistant'
-                    ? { ...m, content: clean }
-                    : m,
+                  i === prev.length - 1 && m.role === 'assistant' ? { ...m, content: clean } : m,
                 ),
               );
             }
             setIsTTSLoading(true);
             const audioUrl = await generateTTS(ttsText, voiceId);
             setIsTTSLoading(false);
-            if (audioUrl) {
-              // Pass the ORIGINAL (with tag) so Index can read [ANIM:<name>].
-              onSpeakStart(audioUrl, assistantSoFar);
-            }
+            if (audioUrl) onSpeakStart(audioUrl, assistantSoFar);
           }
         },
       });
@@ -120,46 +108,86 @@ export default function ChatPanel({
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    // Auto-resize
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  };
+
   const inputBar = (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        handleSend();
-      }}
-      className="flex gap-2"
-    >
-      <Input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="Ketik pesan…"
-        disabled={isLoading}
-        className="bg-secondary/60 border-border text-sm"
-      />
-      <Button type="submit" size="icon" disabled={isLoading || !input.trim()} className="shrink-0">
+    <div className="flex items-end gap-2">
+      <div className="flex-1 relative">
+        <Textarea
+          ref={textareaRef}
+          value={input}
+          onChange={handleTextareaChange}
+          onKeyDown={handleKeyDown}
+          placeholder="Ketik pesan… (Enter kirim, Shift+Enter baris baru)"
+          disabled={isLoading}
+          rows={1}
+          className="resize-none min-h-[40px] max-h-[120px] bg-secondary/50 border-border/60 text-sm placeholder:text-muted-foreground/50 focus:border-primary/50 transition-colors pr-2 scrollbar-thin"
+          style={{ height: 'auto' }}
+        />
+      </div>
+      <Button
+        type="button"
+        size="icon"
+        onClick={handleSend}
+        disabled={isLoading || !input.trim()}
+        className="h-10 w-10 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-40"
+      >
         <Send className="w-4 h-4" />
       </Button>
-    </form>
+    </div>
+  );
+
+  const messageList = (
+    <div className="space-y-3 px-1">
+      {messages.length === 0 && (
+        <div className="flex flex-col items-center gap-3 py-12 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Bot className="w-6 h-6 text-primary/70" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground/70">Mulai percakapan</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Tanya apa saja ke asisten virtual</p>
+          </div>
+        </div>
+      )}
+      {messages.map((msg, i) => (
+        <MessageBubble key={i} msg={msg} />
+      ))}
+      <LoadingIndicators isLoading={isLoading} isTTSLoading={isTTSLoading} messages={messages} />
+    </div>
   );
 
   // Mobile: floating input bar when closed, full overlay when open
   if (isMobile) {
     if (!isOpen) {
-      const hasUnread =
-        messages.length > 0 && messages[messages.length - 1]?.role === 'assistant';
+      const hasUnread = messages.length > 0 && messages[messages.length - 1]?.role === 'assistant';
       return (
-        <div className="absolute bottom-0 left-0 right-0 z-20 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-background via-background/95 to-transparent">
-          <div className="flex items-center gap-2">
+        <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-background/98 via-background/90 to-transparent">
+          <div className="flex items-end gap-2">
             <div className="flex-1">{inputBar}</div>
             {messages.length > 0 && (
               <Button
                 variant="outline"
                 size="icon"
                 onClick={onToggle}
-                className="relative h-10 w-10 shrink-0 border-border bg-secondary/60 backdrop-blur-md touch-manipulation"
+                className="relative h-10 w-10 shrink-0 border-border/60 bg-secondary/70 backdrop-blur-md touch-manipulation"
               >
-                <ChevronUp className="w-4 h-4" />
+                <ChevronDown className="w-4 h-4 rotate-180" />
                 {hasUnread && (
-                  <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary motion-safe:animate-pulse" />
+                  <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background animate-pulse" />
                 )}
               </Button>
             )}
@@ -168,78 +196,102 @@ export default function ChatPanel({
       );
     }
 
-    // Full overlay
     return (
-      <div className="absolute inset-0 z-20 flex flex-col bg-background/95 backdrop-blur-md">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
-          <h2 className="text-sm font-semibold text-foreground">Chat</h2>
-          <Button variant="ghost" size="icon" onClick={onToggle} className="h-8 w-8 touch-manipulation">
+      <div className="absolute inset-0 z-20 flex flex-col bg-background/97 backdrop-blur-xl animate-slide-up">
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-4 border-b border-border/50"
+          style={{ paddingTop: 'max(0.875rem, env(safe-area-inset-top))', paddingBottom: '0.875rem' }}
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center">
+              <Bot className="w-4 h-4 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground leading-none">Chat</h2>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{messages.length} pesan</p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggle}
+            className="h-8 w-8 text-muted-foreground hover:text-foreground touch-manipulation"
+          >
             <X className="w-4 h-4" />
           </Button>
         </div>
 
-        <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-          <div className="space-y-4">
-            {messages.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center mt-8">
-                Mulai percakapan dengan mengetik pesan…
-              </p>
-            )}
-            {messages.map((msg, i) => (
-              <MessageBubble key={i} msg={msg} />
-            ))}
-            <LoadingIndicators isLoading={isLoading} isTTSLoading={isTTSLoading} messages={messages} />
-          </div>
+        <ScrollArea className="flex-1 py-4 px-3" ref={scrollRef}>
+          {messageList}
         </ScrollArea>
 
-        <div className="p-3 border-t border-border pb-[max(0.75rem,env(safe-area-inset-bottom))]">{inputBar}</div>
+        <div className="px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-border/50 bg-background/80">
+          {inputBar}
+        </div>
       </div>
     );
   }
 
   // Desktop: sidebar
   return (
-    <div className="flex flex-col h-full bg-card/80 backdrop-blur-md border-l border-border">
-      <div className="px-4 py-3 border-b border-border">
-        <h2 className="text-sm font-semibold text-foreground">Chat</h2>
-        <p className="text-xs text-muted-foreground">Tanya apa saja ke asisten virtual</p>
+    <div className="flex flex-col h-full bg-card/70 backdrop-blur-xl border-l border-border/50">
+      {/* Header */}
+      <div className="px-4 py-3.5 border-b border-border/50 flex items-center gap-2.5">
+        <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+          <Bot className="w-4 h-4 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold text-foreground leading-none">Chat</h2>
+          <p className="text-[10px] text-muted-foreground mt-0.5 truncate">Tanya apa saja ke asisten virtual</p>
+        </div>
       </div>
 
-      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-        <div className="space-y-4">
-          {messages.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center mt-8">
-              Mulai percakapan dengan mengetik pesan…
-            </p>
-          )}
-          {messages.map((msg, i) => (
-            <MessageBubble key={i} msg={msg} />
-          ))}
-          <LoadingIndicators isLoading={isLoading} isTTSLoading={isTTSLoading} messages={messages} />
-        </div>
+      <ScrollArea className="flex-1 py-4 px-3 scrollbar-thin" ref={scrollRef}>
+        {messageList}
       </ScrollArea>
 
-      <div className="p-3 border-t border-border">{inputBar}</div>
+      <div className="px-3 py-3 border-t border-border/50 bg-background/40">
+        {inputBar}
+        <p className="text-[10px] text-muted-foreground/50 text-center mt-1.5">
+          Enter kirim · Shift+Enter baris baru
+        </p>
+      </div>
     </div>
   );
 }
 
 const MessageBubble = memo(function MessageBubble({ msg }: { msg: ChatMessage }) {
+  const isUser = msg.role === 'user';
   return (
-    <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex items-end gap-2 animate-msg-in ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+      {/* Avatar dot */}
       <div
-        className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
-          msg.role === 'user'
-            ? 'bg-primary text-primary-foreground'
-            : 'bg-secondary text-secondary-foreground'
+        className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mb-0.5 ${
+          isUser
+            ? 'bg-primary/20 border border-primary/30'
+            : 'bg-secondary border border-border/60'
+        }`}
+      >
+        {isUser
+          ? <User className="w-3 h-3 text-primary" />
+          : <Bot className="w-3 h-3 text-muted-foreground" />
+        }
+      </div>
+
+      <div
+        className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
+          isUser
+            ? 'bg-primary text-primary-foreground rounded-br-sm'
+            : 'bg-secondary/80 text-secondary-foreground border border-border/40 rounded-bl-sm'
         }`}
       >
         {msg.role === 'assistant' ? (
-          <div className="prose prose-sm prose-invert max-w-none">
+          <div className="prose prose-sm prose-invert max-w-none [&>p]:mb-1.5 [&>p:last-child]:mb-0 [&>ul]:mt-1 [&>ol]:mt-1">
             <ReactMarkdown>{msg.content}</ReactMarkdown>
           </div>
         ) : (
-          msg.content
+          <span>{msg.content}</span>
         )}
       </div>
     </div>
@@ -258,20 +310,30 @@ function LoadingIndicators({
   return (
     <>
       {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-        <div className="flex justify-start">
-          <div className="bg-secondary rounded-xl px-3 py-2">
-            <div className="flex gap-1">
-              <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        <div className="flex items-end gap-2 animate-msg-in">
+          <div className="w-6 h-6 rounded-full bg-secondary border border-border/60 flex items-center justify-center shrink-0">
+            <Bot className="w-3 h-3 text-muted-foreground" />
+          </div>
+          <div className="bg-secondary/80 border border-border/40 rounded-2xl rounded-bl-sm px-4 py-3">
+            <div className="flex gap-1.5 items-center">
+              {[0, 150, 300].map((delay) => (
+                <span
+                  key={delay}
+                  className="w-1.5 h-1.5 bg-muted-foreground/60 rounded-full animate-bounce"
+                  style={{ animationDelay: `${delay}ms` }}
+                />
+              ))}
             </div>
           </div>
         </div>
       )}
       {isTTSLoading && (
-        <div className="flex justify-start">
-          <div className="bg-secondary/60 rounded-xl px-3 py-1.5 flex items-center gap-2">
-            <Volume2 className="w-3 h-3 text-primary animate-pulse" />
+        <div className="flex items-end gap-2 animate-msg-in">
+          <div className="w-6 h-6 rounded-full bg-secondary border border-border/60 flex items-center justify-center shrink-0">
+            <Bot className="w-3 h-3 text-muted-foreground" />
+          </div>
+          <div className="bg-secondary/60 border border-border/40 rounded-2xl rounded-bl-sm px-3.5 py-2 flex items-center gap-2">
+            <Volume2 className="w-3.5 h-3.5 text-primary animate-pulse" />
             <span className="text-xs text-muted-foreground">Generating speech…</span>
           </div>
         </div>

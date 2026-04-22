@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,45 +6,45 @@
 
 @layer base {
   :root {
-    --background: 220 20% 6%;
-    --foreground: 210 20% 92%;
-    --card: 220 18% 10%;
-    --card-foreground: 210 20% 92%;
-    --popover: 220 18% 10%;
-    --popover-foreground: 210 20% 92%;
-    --primary: 172 66% 50%;
-    --primary-foreground: 220 20% 6%;
-    --secondary: 220 16% 16%;
-    --secondary-foreground: 210 20% 85%;
-    --muted: 220 14% 14%;
-    --muted-foreground: 215 12% 55%;
-    --accent: 260 60% 60%;
-    --accent-foreground: 210 20% 95%;
+    --background: 222 24% 5%;
+    --foreground: 210 18% 93%;
+    --card: 222 22% 9%;
+    --card-foreground: 210 18% 93%;
+    --popover: 222 22% 9%;
+    --popover-foreground: 210 18% 93%;
+    --primary: 174 72% 48%;
+    --primary-foreground: 222 24% 5%;
+    --secondary: 222 18% 14%;
+    --secondary-foreground: 210 18% 82%;
+    --muted: 222 16% 12%;
+    --muted-foreground: 215 12% 52%;
+    --accent: 258 62% 62%;
+    --accent-foreground: 210 18% 96%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-    --border: 220 16% 18%;
-    --input: 220 16% 18%;
-    --ring: 172 66% 50%;
+    --border: 222 18% 16%;
+    --input: 222 18% 16%;
+    --ring: 174 72% 48%;
     --radius: 0.75rem;
 
-    --glow-primary: 172 66% 50%;
-    --glow-accent: 260 60% 60%;
+    --glow-primary: 174 72% 48%;
+    --glow-accent: 258 62% 62%;
 
-    --sidebar-background: 220 18% 8%;
-    --sidebar-foreground: 210 20% 85%;
-    --sidebar-primary: 172 66% 50%;
-    --sidebar-primary-foreground: 220 20% 6%;
-    --sidebar-accent: 220 14% 14%;
-    --sidebar-accent-foreground: 210 20% 85%;
-    --sidebar-border: 220 16% 18%;
-    --sidebar-ring: 172 66% 50%;
+    --sidebar-background: 222 22% 7%;
+    --sidebar-foreground: 210 18% 82%;
+    --sidebar-primary: 174 72% 48%;
+    --sidebar-primary-foreground: 222 24% 5%;
+    --sidebar-accent: 222 16% 12%;
+    --sidebar-accent-foreground: 210 18% 82%;
+    --sidebar-border: 222 18% 16%;
+    --sidebar-ring: 174 72% 48%;
 
-    font-family: 'Space Grotesk', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
   }
 
   .dark {
-    --background: 220 20% 6%;
-    --foreground: 210 20% 92%;
+    --background: 222 24% 5%;
+    --foreground: 210 18% 93%;
   }
 }
 
@@ -56,39 +56,115 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
 @layer utilities {
   .glow-primary {
-    box-shadow: 0 0 20px hsl(var(--glow-primary) / 0.3), 0 0 60px hsl(var(--glow-primary) / 0.1);
+    box-shadow: 0 0 16px hsl(var(--glow-primary) / 0.35), 0 0 48px hsl(var(--glow-primary) / 0.12);
   }
   .glow-accent {
-    box-shadow: 0 0 20px hsl(var(--glow-accent) / 0.3), 0 0 60px hsl(var(--glow-accent) / 0.1);
+    box-shadow: 0 0 16px hsl(var(--glow-accent) / 0.35), 0 0 48px hsl(var(--glow-accent) / 0.12);
   }
   .text-glow {
-    text-shadow: 0 0 10px hsl(var(--glow-primary) / 0.5);
+    text-shadow: 0 0 12px hsl(var(--glow-primary) / 0.45);
   }
   .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
 
-  /* Mobile: prevent overscroll bounce and ensure full viewport height
-     including dynamic browser chrome (address bar show/hide) */
+  /* Gradient border utility */
+  .border-gradient {
+    border: 1px solid transparent;
+    background-clip: padding-box;
+  }
+
+  /* Glass panel */
+  .glass {
+    background: hsl(var(--card) / 0.75);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border: 1px solid hsl(var(--border) / 0.6);
+  }
+
+  /* Subtle inner glow on focus */
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background;
+  }
+
+  /* Scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 99px;
+  }
+
+  /* Mobile: prevent overscroll bounce */
   html, body {
     overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Smooth scrolling for chat messages */
+  /* Smooth scrolling for chat */
   .chat-scroll {
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
   }
 
-  /* Prevent text selection on interactive elements during touch */
+  /* Prevent tap highlight on interactive elements */
   button, [role="button"] {
     -webkit-tap-highlight-color: transparent;
     user-select: none;
+  }
+
+  /* Animated gradient for speaking indicator */
+  @keyframes pulse-ring {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.15); }
+  }
+  .animate-pulse-ring {
+    animation: pulse-ring 1.4s ease-in-out infinite;
+  }
+
+  /* Waveform bars for speaking indicator */
+  @keyframes wave-bar {
+    0%, 100% { transform: scaleY(0.35); }
+    50% { transform: scaleY(1); }
+  }
+  .wave-bar {
+    animation: wave-bar 0.9s ease-in-out infinite;
+    transform-origin: bottom;
+  }
+  .wave-bar:nth-child(2) { animation-delay: 0.15s; }
+  .wave-bar:nth-child(3) { animation-delay: 0.3s; }
+  .wave-bar:nth-child(4) { animation-delay: 0.15s; }
+
+  /* Fade-in for messages */
+  @keyframes msg-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-msg-in {
+    animation: msg-in 0.2s ease-out forwards;
+  }
+
+  /* Slide-up for mobile chat panel */
+  @keyframes slide-up {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .animate-slide-up {
+    animation: slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
   }
 }

@@ -9,33 +9,22 @@ import VrmaLibrary, { type VrmaItem } from '@/components/VrmaLibrary';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ArrowLeft, Save, StopCircle, RotateCcw } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { ArrowLeft, Save, StopCircle, RotateCcw, Wand2, Library, Upload, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CATEGORIES = ['talking', 'greeting', 'idle', 'emote', 'gesture', 'reaction'] as const;
 
-/**
- * Panduan penamaan standar VRMA:
- *
- * Kategori      | Contoh nama              | Keyword utama
- * ------------- | ------------------------ | -----------------------------------------
- * talking       | Talk Casual              | (auto-play loop saat TTS aktif, tanpa keyword)
- * talking       | Talk Expressive          | (auto-play loop saat TTS aktif, tanpa keyword)
- * greeting      | Wave Hello               | halo, hai, hello, selamat pagi, apa kabar
- * greeting      | Bow Greeting             | salam, assalamualaikum, permisi
- * idle          | Idle Breathing           | (auto-play saat diam)
- * emote         | Happy Cheer              | senang, yeay, bagus sekali, mantap
- * gesture       | Nod Yes                  | iya, ya, setuju, benar
- * reaction      | Laugh                    | haha, lucu, tertawa
- */
+const CATEGORY_GUIDE: Array<{ cat: string; color: string; examples: string }> = [
+  { cat: 'talking',  color: 'text-cyan-400',    examples: 'Talk Casual, Talk Expressive — auto-loop saat TTS aktif' },
+  { cat: 'greeting', color: 'text-emerald-400',  examples: 'Wave Hello → halo, hai · Bow Greeting → salam' },
+  { cat: 'idle',     color: 'text-sky-400',      examples: 'Idle Breathing, Idle Look Around — auto-play saat diam' },
+  { cat: 'emote',    color: 'text-violet-400',   examples: 'Happy Cheer → senang · Thinking Pose → hmm' },
+  { cat: 'gesture',  color: 'text-amber-400',    examples: 'Nod Yes → iya · Shake No → tidak' },
+  { cat: 'reaction', color: 'text-rose-400',     examples: 'Laugh → haha · Clap Hands → bravo' },
+];
 
 export default function AdminAnimations() {
   const navigate = useNavigate();
@@ -53,15 +42,11 @@ export default function AdminAnimations() {
   const [loop, setLoop] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState<'upload' | 'library'>('upload');
 
-  // Load admin's active VRM model for preview
   useEffect(() => {
     if (!user) return;
-    supabase
-      .from('vrm_models')
-      .select('file_path')
-      .eq('is_active', true)
-      .maybeSingle()
+    supabase.from('vrm_models').select('file_path').eq('is_active', true).maybeSingle()
       .then(({ data }) => {
         if (data?.file_path) {
           const { data: url } = supabase.storage.from('vrm-models').getPublicUrl(data.file_path);
@@ -70,14 +55,7 @@ export default function AdminAnimations() {
       });
   }, [user]);
 
-  // Cleanup blob URLs on unmount
-  useEffect(() => {
-    return () => {
-      if (prevBlobUrlRef.current) {
-        URL.revokeObjectURL(prevBlobUrlRef.current);
-      }
-    };
-  }, []);
+  useEffect(() => () => { if (prevBlobUrlRef.current) URL.revokeObjectURL(prevBlobUrlRef.current); }, []);
 
   if (authLoading || roleLoading) {
     return (
@@ -86,7 +64,6 @@ export default function AdminAnimations() {
       </div>
     );
   }
-
   if (!user) return <Navigate to="/auth" replace />;
   if (!isAdmin) return <Navigate to="/app" replace />;
 
@@ -100,106 +77,56 @@ export default function AdminAnimations() {
   };
 
   const handleFileSelected = async (file: File, blobUrl: string) => {
-    // Revoke previous blob URL to prevent memory leaks
-    if (prevBlobUrlRef.current && prevBlobUrlRef.current !== blobUrl) {
-      URL.revokeObjectURL(prevBlobUrlRef.current);
-    }
+    if (prevBlobUrlRef.current && prevBlobUrlRef.current !== blobUrl) URL.revokeObjectURL(prevBlobUrlRef.current);
     prevBlobUrlRef.current = blobUrl;
-
     setPreviewFile(file);
     setPreviewUrl(blobUrl);
     if (!name) setName(file.name.replace(/\.vrma$/i, ''));
 
-    const loadingToast = toast.loading(`Memuat ${file.name}…`);
-
-    // Wait for VRM to finish loading if needed
+    const id = toast.loading(`Memuat ${file.name}…`);
     if (!viewerRef.current?.isVrmLoaded()) {
-      toast.loading('Menunggu model VRM siap…', { id: loadingToast });
+      toast.loading('Menunggu model VRM siap…', { id });
       const ready = await waitForVrmReady();
-      if (!ready) {
-        toast.error('Model VRM belum siap. Pastikan model aktif sudah di-set.', {
-          id: loadingToast,
-          duration: 6000,
-        });
-        return;
-      }
+      if (!ready) { toast.error('Model VRM belum siap', { id, duration: 6000 }); return; }
     }
-
     try {
       await viewerRef.current!.playVrmaUrl(blobUrl, { loop, fadeIn: 0.3 });
-      toast.success('Preview animasi berjalan', { id: loadingToast });
+      toast.success('Preview berjalan', { id });
     } catch (e) {
-      const msg = (e as Error).message;
-      toast.error(`Gagal load VRMA: ${msg}`, {
-        id: loadingToast,
-        description: 'Pastikan file format VRMA standar (Pixiv VRM Animation 1.0+)',
-        duration: 6000,
-      });
+      toast.error(`Gagal load VRMA: ${(e as Error).message}`, { id, duration: 6000 });
     }
   };
 
   const handleReplay = async () => {
     if (!previewUrl) return;
-    try {
-      await viewerRef.current?.playVrmaUrl(previewUrl, { loop, fadeIn: 0.3 });
-    } catch (e) {
-      toast.error(`Gagal replay: ${(e as Error).message}`);
-    }
-  };
-
-  const handleStop = () => {
-    viewerRef.current?.stopVrma(0.3);
+    try { await viewerRef.current?.playVrmaUrl(previewUrl, { loop, fadeIn: 0.3 }); }
+    catch (e) { toast.error(`Gagal replay: ${(e as Error).message}`); }
   };
 
   const handlePlayFromLibrary = async (url: string, item: VrmaItem) => {
-    try {
-      await viewerRef.current?.playVrmaUrl(url, { loop: false, fadeIn: 0.3 });
-      toast.success(`Memutar: ${item.name}`);
-    } catch (e) {
-      toast.error(`Gagal: ${(e as Error).message}`);
-    }
+    try { await viewerRef.current?.playVrmaUrl(url, { loop: false, fadeIn: 0.3 }); toast.success(`Memutar: ${item.name}`); }
+    catch (e) { toast.error(`Gagal: ${(e as Error).message}`); }
   };
 
   const handleSave = async () => {
-    if (!previewFile || !user) {
-      toast.error('Pilih file dulu');
-      return;
-    }
-    if (!name.trim()) {
-      toast.error('Beri nama dulu');
-      return;
-    }
+    if (!previewFile || !user) { toast.error('Pilih file dulu'); return; }
+    if (!name.trim()) { toast.error('Beri nama dulu'); return; }
     setSaving(true);
     try {
       const safeName = previewFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       const filePath = `${user.id}/${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage
-        .from('vrma-animations')
-        .upload(filePath, previewFile, { contentType: 'application/octet-stream' });
+      const { error: upErr } = await supabase.storage.from('vrma-animations').upload(filePath, previewFile, { contentType: 'application/octet-stream' });
       if (upErr) throw upErr;
-
-      const trigger_keywords = keywords
-        .split(',')
-        .map((k) => k.trim().toLowerCase())
-        .filter(Boolean);
-
+      const trigger_keywords = keywords.split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
       const { error: insErr } = await supabase.from('vrma_animations').insert({
-        user_id: user.id,
-        name: name.trim(),
-        file_path: filePath,
-        file_name: previewFile.name,
-        category,
-        trigger_keywords,
-        is_active: true,
+        user_id: user.id, name: name.trim(), file_path: filePath,
+        file_name: previewFile.name, category, trigger_keywords, is_active: true,
       });
       if (insErr) throw insErr;
-
       toast.success(`"${name}" tersimpan ke library`);
-      setPreviewFile(null);
-      setPreviewUrl(null);
-      setName('');
-      setKeywords('');
+      setPreviewFile(null); setPreviewUrl(null); setName(''); setKeywords('');
       setRefreshKey((k) => k + 1);
+      setActiveTab('library');
     } catch (e) {
       toast.error(`Gagal simpan: ${(e as Error).message}`);
     } finally {
@@ -210,123 +137,158 @@ export default function AdminAnimations() {
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
       {/* Header */}
-      <header className="flex items-center justify-between p-4 border-b border-border">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-background/90 backdrop-blur-xl shrink-0">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/app')}>
+          <Button variant="ghost" size="icon" onClick={() => navigate('/app')} className="h-8 w-8 text-muted-foreground hover:text-foreground">
             <ArrowLeft className="w-4 h-4" />
           </Button>
-          <h1 className="text-lg font-semibold tracking-tight">Animation Studio</h1>
-          <span className="text-xs text-muted-foreground font-mono">Admin</span>
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center">
+              <Wand2 className="w-3.5 h-3.5 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-sm font-semibold text-foreground leading-none">Animation Studio</h1>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Admin</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Playback controls in header */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground border border-border/50 rounded-lg px-2.5 py-1.5 bg-secondary/40">
+            <span className="text-[10px]">Loop</span>
+            <Switch id="loop" checked={loop} onCheckedChange={setLoop} className="scale-75" />
+          </div>
+          <Button size="sm" variant="outline" onClick={handleReplay} disabled={!previewUrl} className="h-8 text-xs gap-1.5 border-border/60">
+            <RotateCcw className="w-3.5 h-3.5" /> Replay
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => viewerRef.current?.stopVrma(0.3)} className="h-8 text-xs gap-1.5 border-border/60">
+            <StopCircle className="w-3.5 h-3.5" /> Stop
+          </Button>
         </div>
       </header>
 
       {/* Body */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Viewer */}
-        <div className="flex-1 relative bg-background min-h-[300px]">
+        <div className="flex-1 relative bg-background min-h-[280px] md:min-h-0">
           <VrmViewer ref={viewerRef} modelUrl={modelUrl} />
-          {/* Playback controls */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 rounded-md bg-secondary/80 backdrop-blur-md border border-border">
-            <Button size="sm" variant="ghost" onClick={handleReplay} disabled={!previewUrl}>
-              <RotateCcw className="w-3.5 h-3.5 mr-1" /> Replay
-            </Button>
-            <Button size="sm" variant="ghost" onClick={handleStop}>
-              <StopCircle className="w-3.5 h-3.5 mr-1" /> Stop
-            </Button>
-            <div className="flex items-center gap-2 pl-2 border-l border-border">
-              <Label htmlFor="loop" className="text-xs font-mono">Loop</Label>
-              <Switch id="loop" checked={loop} onCheckedChange={setLoop} />
+          {!modelUrl && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center space-y-2">
+                <p className="text-sm text-muted-foreground">Aktifkan model VRM di Pengaturan</p>
+                <p className="text-xs text-muted-foreground/60">untuk preview animasi</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Sidebar */}
-        <aside className="w-full md:w-[400px] border-l border-border flex flex-col overflow-y-auto p-4 gap-6">
-          {/* Naming guide */}
-          <section className="space-y-2">
-            <h2 className="text-sm font-semibold tracking-tight">Panduan Penamaan</h2>
-            <div className="text-[10px] font-mono text-muted-foreground space-y-0.5 bg-secondary/60 rounded-md p-2.5 border border-border leading-relaxed">
-              <p className="font-semibold text-foreground/70 mb-1">Kategori → Nama → Keyword</p>
-              <p className="text-cyan-400 font-semibold mt-1">— TALKING (auto-loop saat TTS aktif) —</p>
-              <p><span className="text-cyan-400">talking</span> → Talk Casual → <em>(tanpa keyword, auto)</em></p>
-              <p><span className="text-cyan-400">talking</span> → Talk Expressive → <em>(tanpa keyword, auto)</em></p>
-              <p><span className="text-cyan-400">talking</span> → Talk Gesture Hand → <em>(tanpa keyword, auto)</em></p>
-              <p className="text-emerald-400 font-semibold mt-1">— GREETING —</p>
-              <p><span className="text-emerald-400">greeting</span> → Wave Hello → halo, hai, hello</p>
-              <p><span className="text-emerald-400">greeting</span> → Bow Greeting → salam, assalamualaikum</p>
-              <p className="text-sky-400 font-semibold mt-1">— IDLE —</p>
-              <p><span className="text-sky-400">idle</span> → Idle Breathing → <em>(tanpa keyword)</em></p>
-              <p><span className="text-sky-400">idle</span> → Idle Look Around → <em>(tanpa keyword)</em></p>
-              <p className="text-violet-400 font-semibold mt-1">— EMOTE —</p>
-              <p><span className="text-violet-400">emote</span> → Happy Cheer → senang, yeay, bagus</p>
-              <p><span className="text-violet-400">emote</span> → Thinking Pose → hmm, berpikir</p>
-              <p className="text-amber-400 font-semibold mt-1">— GESTURE —</p>
-              <p><span className="text-amber-400">gesture</span> → Nod Yes → iya, ya, setuju</p>
-              <p><span className="text-amber-400">gesture</span> → Shake No → tidak, bukan, jangan</p>
-              <p className="text-rose-400 font-semibold mt-1">— REACTION —</p>
-              <p><span className="text-rose-400">reaction</span> → Laugh → haha, lucu, tertawa</p>
-              <p><span className="text-rose-400">reaction</span> → Clap Hands → luar biasa, bravo</p>
-            </div>
-          </section>
+        <aside className="w-full md:w-[380px] border-t md:border-t-0 md:border-l border-border/50 flex flex-col overflow-hidden bg-card/30">
+          {/* Tab switcher */}
+          <div className="flex border-b border-border/50 shrink-0">
+            {[
+              { id: 'upload', label: 'Upload', icon: Upload },
+              { id: 'library', label: 'Library', icon: Library },
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id as any)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors border-b-2 ${
+                  activeTab === id
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
 
-          {/* Upload */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold tracking-tight">Preview Upload</h2>
-            <VrmaUploader onFileSelected={handleFileSelected} />
-            {previewFile && (
-              <p className="text-xs text-muted-foreground font-mono truncate">
-                {previewFile.name}
-              </p>
-            )}
-          </section>
+          <ScrollArea className="flex-1 scrollbar-thin">
+            <div className="p-4 space-y-5">
+              {activeTab === 'upload' ? (
+                <>
+                  {/* Naming guide */}
+                  <details className="group">
+                    <summary className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors list-none">
+                      <Info className="w-3.5 h-3.5" />
+                      Panduan Penamaan
+                      <span className="ml-auto text-[10px] group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div className="mt-2.5 rounded-xl border border-border/50 bg-secondary/30 p-3 space-y-2">
+                      {CATEGORY_GUIDE.map(({ cat, color, examples }) => (
+                        <div key={cat} className="text-[10px] leading-relaxed">
+                          <span className={`font-bold font-mono ${color}`}>{cat.toUpperCase()}</span>
+                          <span className="text-muted-foreground ml-1.5">{examples}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
 
-          {/* Save form */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold tracking-tight">Simpan ke Library</h2>
-            <div className="space-y-2">
-              <Label htmlFor="name" className="text-xs">Nama Adegan</Label>
-              <Input
-                id="name"
-                placeholder="e.g. Wave Hello, Nod Yes, Happy Cheer"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="cat" className="text-xs">Kategori</Label>
-              <Select value={category} onValueChange={(v) => setCategory(v as typeof CATEGORIES[number])}>
-                <SelectTrigger id="cat"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="kw" className="text-xs">Trigger Keywords (comma-separated)</Label>
-              <Input
-                id="kw"
-                placeholder="contoh: halo, hai, hello, selamat pagi"
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-              />
-            </div>
-            <Button
-              onClick={handleSave}
-              disabled={!previewFile || saving}
-              className="w-full gap-2"
-            >
-              <Save className="w-4 h-4" />
-              {saving ? 'Menyimpan…' : 'Simpan'}
-            </Button>
-          </section>
+                  {/* File upload */}
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold text-foreground">File Animasi</h3>
+                    <VrmaUploader onFileSelected={handleFileSelected} />
+                    {previewFile && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                        <p className="text-xs text-primary/80 font-mono truncate flex-1">{previewFile.name}</p>
+                      </div>
+                    )}
+                  </div>
 
-          {/* Library */}
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold tracking-tight">Library</h2>
-            <VrmaLibrary refreshKey={refreshKey} onPlay={handlePlayFromLibrary} />
-          </section>
+                  {/* Metadata form */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-semibold text-foreground">Metadata</h3>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="anim-name" className="text-[11px] text-muted-foreground">Nama Animasi</Label>
+                      <Input
+                        id="anim-name"
+                        placeholder="e.g. Wave Hello, Nod Yes"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="h-9 bg-secondary/40 border-border/50 text-sm"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="anim-cat" className="text-[11px] text-muted-foreground">Kategori</Label>
+                      <Select value={category} onValueChange={(v) => setCategory(v as any)}>
+                        <SelectTrigger id="anim-cat" className="h-9 bg-secondary/40 border-border/50 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CATEGORIES.map((c) => <SelectItem key={c} value={c} className="text-sm">{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="anim-kw" className="text-[11px] text-muted-foreground">Trigger Keywords</Label>
+                      <Input
+                        id="anim-kw"
+                        placeholder="halo, hai, hello, selamat pagi"
+                        value={keywords}
+                        onChange={(e) => setKeywords(e.target.value)}
+                        className="h-9 bg-secondary/40 border-border/50 text-sm"
+                      />
+                      <p className="text-[10px] text-muted-foreground/60">Pisahkan dengan koma. Kosongkan untuk talking/idle.</p>
+                    </div>
+                  </div>
+
+                  <Button onClick={handleSave} disabled={!previewFile || saving} className="w-full gap-2 h-10">
+                    <Save className="w-4 h-4" />
+                    {saving ? 'Menyimpan…' : 'Simpan ke Library'}
+                  </Button>
+                </>
+              ) : (
+                <VrmaLibrary refreshKey={refreshKey} onPlay={handlePlayFromLibrary} />
+              )}
+            </div>
+          </ScrollArea>
         </aside>
       </div>
     </div>
