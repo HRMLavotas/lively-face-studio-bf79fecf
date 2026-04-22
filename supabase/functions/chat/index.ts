@@ -28,7 +28,7 @@ async function buildAnimationCatalog(): Promise<string> {
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
     const { data, error } = await supabase
       .from("vrma_animations")
-      .select("name, category")
+      .select("name, category, file_path")
       .eq("is_active", true)
       .not("category", "in", "(talking,idle)")
       .order("category", { ascending: true })
@@ -84,15 +84,15 @@ At the END of your reply, append on its own new line exactly:
 [ANIM:<exact name>]    (or [ANIM:none])
 
 Pick the animation based on the EMOTIONAL TONE OF YOUR OWN REPLY, not the user's mood. Examples:
-- User cerita sial / sedih → kamu prihatin → reaction "Sad Idle 1" / "Disappointed" / "Wiping Sweat" (NEVER Cheering, Surprise, or Victory)
-- User cerita lucu / kabar baik → emote "Cheering" / "Happy Hand Gesture" / "Clapping"
-- User bertanya / kamu sedang berpikir → gesture "Thinking" / "Acknowledging"
-- User memberi salam → greeting "Waving" / "Standing Greeting"
-- User berterima kasih → emote "Thankful"
-- User menolak / kamu menolak → gesture "Shaking Head No"
-- User minta penjelasan / kamu setuju → gesture "Agreeing" / "Pointing"
-- User memuji / kamu malu → emote "Bashful"
+- User cerita sial / sedih → kamu prihatin → pick a "reaction" or "emote" that fits sadness/sympathy
+- User cerita lucu / kabar baik → pick a happy "emote" from the catalog
+- User bertanya / kamu sedang berpikir → pick a "gesture" that fits thinking/explaining
+- User memberi salam → pick a "greeting" animation from the catalog
+- User berterima kasih → pick a thankful "emote" from the catalog
+- User menolak / kamu menolak → pick a "gesture" that fits disagreement
+- User minta penjelasan / kamu setuju → pick a "gesture" that fits agreement/pointing
 
+IMPORTANT: Only use animation names that appear EXACTLY in the catalog above. Do not invent names.
 The [ANIM:...] tag is metadata — it will be stripped from the spoken output. Always include it on its own line at the very end.`
       : "";
 

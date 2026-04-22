@@ -27,12 +27,21 @@ export function useAudioAnalyser(): AudioAnalyserControls {
 
   const ensureContext = useCallback(() => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
+      try {
+        audioContextRef.current = new AudioContext();
+        console.log('[useAudioAnalyser] AudioContext created, state:', audioContextRef.current.state);
+      } catch (e) {
+        console.error('[useAudioAnalyser] Failed to create AudioContext:', e);
+        throw e;
+      }
     }
     // Browsers may suspend the AudioContext if it was created before user
     // gesture — resume on every connect to be safe.
     if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume().catch(() => { /* ignore */ });
+      console.log('[useAudioAnalyser] Resuming suspended AudioContext...');
+      audioContextRef.current.resume()
+        .then(() => console.log('[useAudioAnalyser] AudioContext resumed successfully'))
+        .catch((e) => console.warn('[useAudioAnalyser] Failed to resume AudioContext:', e));
     }
     if (!analyserRef.current) {
       const analyser = audioContextRef.current.createAnalyser();
@@ -40,6 +49,7 @@ export function useAudioAnalyser(): AudioAnalyserControls {
       analyser.smoothingTimeConstant = 0.8;
       analyserRef.current = analyser;
       dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount);
+      console.log('[useAudioAnalyser] AnalyserNode created');
     }
     return { ctx: audioContextRef.current, analyser: analyserRef.current };
   }, []);
@@ -49,32 +59,39 @@ export function useAudioAnalyser(): AudioAnalyserControls {
     if (attachedElementRef.current === audio && sourceRef.current) {
       // Ensure context is running for subsequent plays.
       if (audioContextRef.current?.state === 'suspended') {
-        audioContextRef.current.resume().catch(() => { /* ignore */ });
+        console.log('[useAudioAnalyser] Resuming AudioContext for existing connection...');
+        audioContextRef.current.resume().catch((e) => console.warn('[useAudioAnalyser] Resume failed:', e));
       }
       setIsActive(true);
+      console.log('[useAudioAnalyser] Audio element already connected, reusing connection');
       return;
     }
 
-    const { ctx, analyser } = ensureContext();
-
-    // Disconnect previous source (if any) so it stops feeding the analyser.
-    if (sourceRef.current) {
-      try { sourceRef.current.disconnect(); } catch (_) { /* ignore */ }
-      sourceRef.current = null;
-    }
-
     try {
+      const { ctx, analyser } = ensureContext();
+
+      // Disconnect previous source (if any) so it stops feeding the analyser.
+      if (sourceRef.current) {
+        console.log('[useAudioAnalyser] Disconnecting previous source');
+        try { sourceRef.current.disconnect(); } catch (_) { /* ignore */ }
+        sourceRef.current = null;
+      }
+
+      console.log('[useAudioAnalyser] Creating MediaElementSource for audio element');
       const source = ctx.createMediaElementSource(audio);
       source.connect(analyser);
       analyser.connect(ctx.destination);
       sourceRef.current = source;
       attachedElementRef.current = audio;
       setIsActive(true);
+      console.log('[useAudioAnalyser] ✓ Audio element connected successfully');
     } catch (err) {
       // Most common cause: this audio element was already connected to a
       // MediaElementSource in another AudioContext. Caller should reuse a
       // single persistent element to avoid this.
-      console.warn('[useAudioAnalyser] createMediaElementSource failed:', err);
+      console.error('[useAudioAnalyser] createMediaElementSource failed:', err);
+      // Try to recover by marking as inactive but not throwing
+      setIsActive(false);
     }
   }, [ensureContext]);
 

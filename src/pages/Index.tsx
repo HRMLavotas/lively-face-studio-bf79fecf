@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { detectMood } from '@/lib/sentiment';
 import { setTargetMood } from '@/lib/vrm-animations';
 import { useVrmaTriggers } from '@/hooks/useVrmaTriggers';
+import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
 import { parseAnimTag } from '@/lib/chat-api';
 import type { VrmViewerHandle, CameraPreset } from '@/components/VrmViewer';
 import type { LangCode } from '@/lib/lang-detect';
@@ -39,6 +40,9 @@ export default function Index() {
   // the same element keeps lip sync working across every message.
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const viewerRef = useRef<VrmViewerHandle>(null);
+
+  // Audio analyser for lip sync — single instance, connected after first user gesture
+  const { connectAudioElement, getAudioLevel } = useAudioAnalyser();
 
   // Multilingual VRMA trigger matcher (loads keywords for all active clips)
   const { findMatch, findClipByName } = useVrmaTriggers();
@@ -68,6 +72,20 @@ export default function Index() {
       audio.removeEventListener('error', onError);
     };
   }, []);
+
+  // Connect audio element to analyser ONLY after first user interaction
+  // (when they send their first message). This ensures AudioContext is
+  // created after a user gesture, avoiding browser autoplay policy blocks.
+  const [audioConnected, setAudioConnected] = useState(false);
+  useEffect(() => {
+    if (!audioConnected || !audioEl) return;
+    try {
+      console.log('[Index] Connecting audio element to analyser after user gesture');
+      connectAudioElement(audioEl);
+    } catch (e) {
+      console.warn('[Index] Could not connect audio element:', e);
+    }
+  }, [audioConnected, audioEl, connectAudioElement]);
 
   // Auto-load active model & voice. Re-runs when user logs in/out so RLS-scoped queries refresh.
   useEffect(() => {
@@ -113,6 +131,13 @@ export default function Index() {
     (audioUrl: string, messageText?: string) => {
       const audio = audioRef.current;
       if (!audio) return;
+
+      // Ensure audio analyser is connected (triggers AudioContext creation
+      // after user gesture, avoiding autoplay policy blocks)
+      if (!audioConnected) {
+        setAudioConnected(true);
+      }
+
       audio.pause();
       audio.src = audioUrl;
       if (messageText) {
@@ -152,7 +177,7 @@ export default function Index() {
       setIsSpeaking(true);
       audio.play().catch(() => setIsSpeaking(false));
     },
-    [findMatch, findClipByName, userLangPref],
+    [findMatch, findClipByName, userLangPref, audioConnected],
   );
 
   const handleSpeakEnd = useCallback(() => {
@@ -166,6 +191,12 @@ export default function Index() {
   // the AI which has full conversational context.
   const handleUserMessage = useCallback(
     (text: string) => {
+      // Trigger audio connection on first user message (ensures AudioContext
+      // is created after user gesture)
+      if (!audioConnected) {
+        setAudioConnected(true);
+      }
+
       const mood = detectMood(text);
       if (mood !== 'neutral') setTargetMood(mood);
 
@@ -179,7 +210,7 @@ export default function Index() {
           .catch((e) => console.warn('[Trigger] play failed:', e));
       }
     },
-    [findMatch, userLangPref],
+    [findMatch, userLangPref, audioConnected],
   );
 
   const handleCameraPresetChange = useCallback(
@@ -218,6 +249,7 @@ export default function Index() {
             isSpeaking={isSpeaking}
             audioElement={audioEl}
             currentMessage={spokenMessage}
+            getAudioLevel={audioConnected ? getAudioLevel : undefined}
           />
         </Suspense>
 

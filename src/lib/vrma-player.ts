@@ -12,6 +12,10 @@ export interface PlayVrmaOptions {
   loop?: boolean;
   fadeIn?: number;
   fadeOut?: number;
+  /** If true, freeze on last frame when finished. Default false for talking clips
+   *  to avoid frozen pose bleeding into crossfades. Use true only for one-shot
+   *  gestures that should hold their end pose until the next clip takes over. */
+  clamp?: boolean;
 }
 
 /**
@@ -160,10 +164,9 @@ export function createMixer(vrm: VRM): THREE.AnimationMixer {
 
 /**
  * Play a clip with cross-fade from the currently active actions.
+ * Uses THREE's built-in crossFadeTo when possible for smooth transitions.
  * Does NOT call stopAllAction/uncacheRoot synchronously — that causes a
- * 1-frame T-pose flash. Instead, fadeOut old actions while fadeIn the new
- * one so THREE blends bones smoothly. Cleanup of old actions happens after
- * the cross-fade completes.
+ * 1-frame T-pose flash.
  */
 export function playVRMA(
   mixer: THREE.AnimationMixer | null,
@@ -174,18 +177,20 @@ export function playVRMA(
     console.warn('playVRMA: mixer is null, skipping');
     return null;
   }
-  const { loop = false, fadeIn = 0.4 } = opts;
+  const { loop = false, fadeIn = 0.4, clamp = false } = opts;
 
-  // Snapshot currently-running actions BEFORE creating the new one so we
-  // can fade them out and clean them up after the cross-fade completes.
-  const prevActions: THREE.AnimationAction[] = [];
+  // Find the single most-weighted active action to crossfade FROM.
+  // Using crossFadeTo is more reliable than manual weight manipulation.
+  let dominantPrev: THREE.AnimationAction | null = null;
+  let maxWeight = 0;
   try {
     const all = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
     for (const a of all) {
-      // Include any enabled/running action, even at weight≈0. THREE keeps
-      // them as a valid source pose for cross-fade — preventing T-pose flash.
-      if (a.enabled || a.isRunning() || a.getEffectiveWeight() > 0.001) {
-        prevActions.push(a);
+      if (!a.enabled) continue;
+      const w = a.getEffectiveWeight();
+      if ((a.isRunning() || a.paused) && w > maxWeight) {
+        maxWeight = w;
+        dominantPrev = a;
       }
     }
   } catch (_) { /* ok */ }
@@ -195,34 +200,36 @@ export function playVRMA(
   action.enabled = true;
   action.timeScale = 1;
   action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
-  action.clampWhenFinished = true;
+  action.clampWhenFinished = clamp;
 
-  // Cross-fade: ramp old actions to 0 while new action ramps to 1.
-  if (fadeIn > 0 && prevActions.length > 0) {
-    for (const prev of prevActions) {
-      // Don't double-fade if the same action object somehow.
-      if (prev === action) continue;
-      try { prev.fadeOut(fadeIn); } catch (_) { /* ok */ }
-    }
-    action.setEffectiveWeight(0);
-    action.fadeIn(fadeIn);
+  if (fadeIn > 0 && dominantPrev && dominantPrev !== action) {
+    // Use THREE's crossFadeTo for smooth weight transfer — guarantees
+    // total weight stays at 1 throughout the transition (no T-pose window).
+    action.setEffectiveWeight(1);
+    action.play();
+    dominantPrev.crossFadeTo(action, fadeIn, true);
+
+    // Also fade out any other secondary actions that aren't the dominant one
+    try {
+      const all = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
+      for (const a of all) {
+        if (!a.enabled || a === action || a === dominantPrev) continue;
+        if (a.isRunning() || a.paused || a.getEffectiveWeight() > 0.001) {
+          try { a.fadeOut(fadeIn); } catch (_) { /* ok */ }
+        }
+      }
+    } catch (_) { /* ok */ }
+  } else if (dominantPrev === action) {
+    // Same action — just ensure it's playing
+    action.play();
   } else {
+    // No prev action — start immediately at full weight
     action.setEffectiveWeight(1);
     action.weight = 1;
+    action.play();
   }
 
-  action.play();
-
-  // NOTE: We intentionally do NOT stop() prev actions after the fade.
-  // THREE.AnimationMixer keeps actions in `_actions` even at weight=0; they
-  // contribute nothing to the pose but remain valid as a "source pose" for
-  // the NEXT cross-fade. Calling stop() here would deactivate them and the
-  // next playVRMA call would have no source action → bones snap to bind
-  // pose (T-pose flash) during fadeIn. Clip count is bounded (~120) so the
-  // memory footprint is fine; clipAction() returns the same cached action
-  // when re-invoked with the same clip.
-
-  console.log('[VRMA] Action cross-faded in — duration:', clip.duration.toFixed(2), 's, loop:', loop, 'prev actions faded:', prevActions.length);
+  console.log('[VRMA] Action cross-faded in — duration:', clip.duration.toFixed(2), 's, loop:', loop, 'prev faded:', dominantPrev ? 'yes' : 'none');
   return action;
 }
 
@@ -236,7 +243,15 @@ export function stopVRMA(mixer: THREE.AnimationMixer | null, fadeOut = 0.3): voi
   try {
     const actions = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
     actions.forEach((action) => {
-      try { action.fadeOut(fadeOut); } catch (_) { /* ok */ }
+      try {
+        // If action is already at weight 0 and not running, just disable it
+        // so it doesn't linger as a "source pose" for future crossfades.
+        if (!action.isRunning() && action.getEffectiveWeight() <= 0.001) {
+          action.enabled = false;
+        } else {
+          action.fadeOut(fadeOut);
+        }
+      } catch (_) { /* ok */ }
     });
   } catch (e) {
     console.warn('stopVRMA: failed (safe to ignore):', e);

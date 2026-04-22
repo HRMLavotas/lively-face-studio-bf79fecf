@@ -14,7 +14,6 @@ import {
   getClipDrivenBones,
 } from '@/lib/vrm-animations';
 import { detectMood } from '@/lib/sentiment';
-import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
 import { loadVRMA, createMixer, playVRMA, stopVRMA, type PlayVrmaOptions } from '@/lib/vrma-player';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -86,10 +85,12 @@ interface VrmViewerProps {
   /** Latest assistant message text — used to drive mood while speaking */
   currentMessage?: string;
   className?: string;
+  /** Callback to get current audio level (0–1) for lip sync. Provided by parent after user gesture. */
+  getAudioLevel?: () => number;
 }
 
 const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer(
-  { modelUrl, isSpeaking = false, audioElement, currentMessage, className },
+  { modelUrl, isSpeaking = false, audioElement, currentMessage, className, getAudioLevel },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -135,8 +136,6 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const { connectAudioElement, getAudioLevel, disconnect: disconnectAudio } = useAudioAnalyser();
-
   isSpeakingRef.current = isSpeaking;
 
   // ── Load talking-category VRMA clips from Supabase ──────────────────────
@@ -148,7 +147,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       try {
         const { data } = await supabase
           .from('vrma_animations')
-          .select('file_path')
+          .select('file_path, name')
           .eq('category', 'talking')
           .eq('is_active', true)
           .order('name', { ascending: true });
@@ -168,8 +167,14 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
             if (urlData?.publicUrl) {
               const clip = await loadVRMA(urlData.publicUrl, vrm);
               if (!cancelled) {
-                clips.push(clip);
-                console.log('[VRMA Talking] Loaded:', row.file_path);
+                // Skip clips that are too short to be useful as talking animations
+                // (< 1.5s clips are likely corrupt or single-pose clips)
+                if (clip.duration < 1.5) {
+                  console.warn('[VRMA Talking] Skipping short clip:', row.name, 'duration:', clip.duration.toFixed(2), 's');
+                } else {
+                  clips.push(clip);
+                  console.log('[VRMA Talking] Loaded:', row.name, '(' + clip.duration.toFixed(2) + 's)');
+                }
               }
             }
           } catch (e) {
@@ -242,7 +247,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
               // AUTO-START on first clip without waiting for others
               // This prevents T-pose flash during loading
-              if (!firstClipLoaded && !vrmaActionRef.current && !isTalkingPlayingRef.current) {
+              // BUT: Don't start if talking or manual VRMA is already active
+              if (!firstClipLoaded && !vrmaActionRef.current && !isTalkingPlayingRef.current && !isSpeakingRef.current) {
                 firstClipLoaded = true;
                 firstClip = clip;
                 idleClipsRef.current = clips; // Update immediately with what we have
@@ -264,6 +270,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
                   activeDrivenBonesRef.current = getClipDrivenBones(clip);
                   console.log('[VRMA Idle] ✓ FIRST CLIP AUTO-STARTED (no T-pose!)');
                 }
+              } else if (!firstClipLoaded) {
+                // First clip loaded but another animation is active — just store it
+                firstClipLoaded = true;
+                idleClipsRef.current = clips;
+                console.log('[VRMA Idle] First clip loaded but another animation is active — stored for later');
               }
             }
           } catch (e) {
@@ -317,13 +328,19 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
     // If no idle clips loaded, don't try to restart (will just use micro-gestures)
     if (!mixer || clips.length === 0) {
-      console.log('[VRMA Idle] No idle clips available to restart');
+      console.log('[VRMA Idle] No idle clips available to restart — using micro-gestures only');
       return;
     }
 
     // Don't restart if another action is currently playing
     if (vrmaActionRef.current || isTalkingPlayingRef.current) {
-      console.log('[VRMA Idle] Cannot restart — another action is active');
+      console.log('[VRMA Idle] Cannot restart — another action is active (vrma:', !!vrmaActionRef.current, 'talking:', isTalkingPlayingRef.current, ')');
+      return;
+    }
+
+    // Check if idle is already running
+    if (idleActionRef.current?.isRunning()) {
+      console.log('[VRMA Idle] Already running — no need to restart');
       return;
     }
 
@@ -340,7 +357,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       idleActionRef.current = action;
       vrmaPlayingRef.current = true;
       activeDrivenBonesRef.current = getClipDrivenBones(clip);
-      console.log('[VRMA Idle] ✓ Resumed idle loop, clip index:', idleCurrentIndexRef.current);
+      console.log('[VRMA Idle] ✓ Resumed idle loop, clip index:', idleCurrentIndexRef.current, 'name:', clip.name || 'unnamed');
     } catch (e) {
       console.warn('[VRMA Idle] ✗ Could not restart idle loop:', e);
     }
@@ -460,25 +477,58 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const playNextTalking = useCallback(() => {
     const mixer = mixerRef.current;
     const clips = talkingClipsRef.current;
-    if (!mixer || clips.length === 0) return;
-    if (!isTalkingPlayingRef.current) return;
-    if (vrmaActionRef.current) return; // manual VRMA / gesture took over
+    if (!mixer || clips.length === 0) {
+      console.warn('[TTS] Cannot play talking — no mixer or clips available');
+      return;
+    }
+    if (!isTalkingPlayingRef.current) {
+      console.log('[TTS] Talking flag is false — not playing next clip');
+      return;
+    }
+    if (vrmaActionRef.current) {
+      console.log('[TTS] Manual VRMA active — talking paused');
+      return;
+    }
 
-    const clip = clips[talkingClipIndexRef.current % clips.length];
-    talkingClipIndexRef.current = (talkingClipIndexRef.current + 1) % clips.length;
+    // Pick next clip — advance index first to avoid repeating same clip
+    // when called back-to-back (e.g. gesture interrupts then resumes talking)
+    const idx = talkingClipIndexRef.current % clips.length;
+    talkingClipIndexRef.current = (idx + 1) % clips.length;
+    const clip = clips[idx];
 
     vrmaPlayingRef.current = true;
-    const isFirst = idleActionRef.current?.isRunning() ?? false;
-    const action = playVRMA(mixer, clip, { loop: false, fadeIn: isFirst ? 0.4 : 0.5 });
-    if (!action) { vrmaPlayingRef.current = false; return; }
-    if (isFirst) {
-      setTimeout(() => { idleActionRef.current = null; }, 450);
+
+    // Check if idle action is still running (first talking clip case)
+    const idleStillRunning = idleActionRef.current?.isRunning() ?? false;
+    // Faster fadeIn: 0.25s feels snappy without being jarring
+    const fadeIn = idleStillRunning ? 0.25 : 0.3;
+
+    // Log current mixer state for debugging
+    const allActions = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
+    const activeCount = allActions.filter(a => a.enabled && (a.isRunning() || a.paused)).length;
+    console.log('[TTS] Playing talking clip idx:', idx, 'name:', clip.name || 'unnamed',
+      'duration:', clip.duration.toFixed(2), 'active actions in mixer:', activeCount);
+
+    const action = playVRMA(mixer, clip, { loop: false, fadeIn });
+    if (!action) {
+      console.warn('[TTS] Failed to create talking action');
+      vrmaPlayingRef.current = false;
+      return;
     }
+    // Clear idle ref immediately — playVRMA already faded it out.
+    // Keeping it set causes the loop event handler to try switching clips
+    // while talking is active.
+    idleActionRef.current = null;
     activeDrivenBonesRef.current = getClipDrivenBones(clip);
 
     const onFinished = (e: { action: THREE.AnimationAction }) => {
       if (e.action !== action) return;
       mixer.removeEventListener('finished', onFinished);
+      console.log('[TTS] Talking clip finished, isTalking:', isTalkingPlayingRef.current, 'vrmaAction:', !!vrmaActionRef.current);
+      // THREE disables LoopOnce actions after 'finished'. Re-enable + pause
+      // so it stays as a valid source pose for the next crossfade.
+      action.enabled = true;
+      action.paused = true;
       if (isTalkingPlayingRef.current && !vrmaActionRef.current) {
         playNextTalking();
       } else {
@@ -496,15 +546,39 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     if (isSpeaking) {
       // If external VRMA is playing (e.g. admin preview / AI-chosen gesture),
       // don't override it — let it finish, then talking takes over.
-      if (vrmaActionRef.current) return;
+      if (vrmaActionRef.current) {
+        console.log('[TTS] Gesture active — talking will resume after gesture finishes');
+        return;
+      }
 
       const clips = talkingClipsRef.current;
-      if (!vrm || !mixer || clips.length === 0) return;
+      if (!vrm || !mixer) {
+        console.warn('[TTS] VRM or mixer not ready — cannot start talking animation');
+        return;
+      }
+
+      if (clips.length === 0) {
+        console.warn('[TTS] No talking clips loaded yet — will use idle + lip sync only');
+        // Set up a retry mechanism to check if clips become available
+        const retryInterval = setInterval(() => {
+          if (talkingClipsRef.current.length > 0 && isSpeakingRef.current && !isTalkingPlayingRef.current) {
+            console.log('[TTS] Talking clips now available — starting talking animation');
+            clearInterval(retryInterval);
+            isTalkingPlayingRef.current = true;
+            idlePausedForActivityRef.current = true;
+            playNextTalking();
+          }
+        }, 200);
+        // Clean up after 3 seconds
+        setTimeout(() => clearInterval(retryInterval), 3000);
+        return;
+      }
 
       isReturnToRestRef.current = false;
       isTalkingPlayingRef.current = true;
       idlePausedForActivityRef.current = true;
 
+      console.log('[TTS] Starting talking animation with', clips.length, 'clips available');
       playNextTalking();
     } else {
       // TTS ended — cross-fade from talking back to idle clip (no T-pose flash).
@@ -515,20 +589,24 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
         const clips = idleClipsRef.current;
         if (mixer && clips.length > 0) {
-          // Cross-fade directly to current idle clip — playVRMA handles fadeOut
-          // of the talking action while fadeIn the idle one (smooth, no T-pose).
           console.log('[TTS] Crossfading to idle clip');
           const idleClip = clips[idleCurrentIndexRef.current % clips.length];
           idleClipRef.current = idleClip;
-          const idleAction = playVRMA(mixer, idleClip, { loop: true, fadeIn: 0.5 });
+          // Fast fadeIn (0.25s) so idle starts immediately when TTS ends
+          const idleAction = playVRMA(mixer, idleClip, { loop: true, fadeIn: 0.25 });
           if (idleAction) {
             idleActionRef.current = idleAction;
             vrmaPlayingRef.current = true;
             activeDrivenBonesRef.current = getClipDrivenBones(idleClip);
             console.log('[TTS] ✓ Successfully crossfaded to idle');
           } else {
-            console.warn('[TTS] ✗ Failed to crossfade to idle');
+            console.warn('[TTS] ✗ Failed to crossfade to idle — retrying');
             vrmaPlayingRef.current = false;
+            setTimeout(() => {
+              if (!isSpeakingRef.current && !isTalkingPlayingRef.current) {
+                restartIdleLoop();
+              }
+            }, 300);
           }
         } else if (mixer && vrmaPlayingRef.current) {
           // Fallback: no idle clips loaded yet — fade everything out softly (no T-pose).
@@ -540,8 +618,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
             isReturnToRestRef.current = false;
             vrmaPlayingRef.current = false;
             // Retry idle loop once
+            console.log('[TTS] Retry: checking for idle clips after fade');
             restartIdleLoop();
           }, 600);
+        } else {
+          console.warn('[TTS] No mixer available for transition');
         }
       }
 
@@ -552,16 +633,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSpeaking]);
-  useEffect(() => {
-    if (!audioElement) return;
-    try {
-      connectAudioElement(audioElement);
-    } catch (e) {
-      console.warn('Could not connect audio element:', e);
-    }
-  }, [audioElement, connectAudioElement]);
-
+  }, [isSpeaking, restartIdleLoop, playNextTalking]);
   useEffect(() => {
     if (isSpeaking && currentMessage) {
       const mood = detectMood(currentMessage);
@@ -644,30 +716,43 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       if (!vrmBefore) throw new Error('VRM model belum dimuat');
       console.log('[VRMA] Loading clip from', url);
 
-      // Load + parse can take time. Re-validate refs AFTER the await.
-      const vrm = vrmRef.current;
-      if (!vrm) {
-        throw new Error('Model di-reload selama loading VRMA — coba lagi');
+      const clip = await loadVRMA(url, vrmBefore);
+
+      // Skip clips that are too short — they cause T-pose flash
+      if (clip.duration < 1.0) {
+        console.warn('[VRMA] Skipping very short clip:', clip.duration.toFixed(2), 's — replace this clip in the admin panel.');
+        return;
       }
 
-      // If VRM changed while loading, re-load clip against the current model
-      const targetVrm = vrm !== vrmBefore ? vrm : vrmBefore;
-      if (vrm !== vrmBefore) {
-        console.warn('[VRMA] VRM changed during load — re-loading clip for new model');
+      // Re-validate VRM after async load — model may have changed
+      const vrm = vrmRef.current;
+      if (!vrm || vrm !== vrmBefore) {
+        console.warn('[VRMA] VRM changed during load — aborting gesture');
+        return;
       }
-      const clip = await loadVRMA(url, targetVrm);
+
+      // If talking is already active AND this is an AI-triggered gesture
+      // (isSpeaking = true), only allow it if vrmaActionRef is not already set.
+      // This prevents a late-loading gesture from overriding an already-running
+      // talking animation when the gesture load took longer than TTS start.
+      if (isSpeakingRef.current && isTalkingPlayingRef.current) {
+        console.log('[VRMA] Talking already active — skipping late gesture (load took too long)');
+        return;
+      }
 
       // Recreate mixer if it was nulled out (or never existed) for the current vrm.
       if (!mixerRef.current) {
         console.log('[VRMA] Recreating mixer for current VRM');
-        mixerRef.current = createMixer(targetVrm);
+        mixerRef.current = createMixer(vrm);
       }
 
       const mixer = mixerRef.current;
       // Set vrmaPlayingRef BEFORE calling playVRMA so the animate loop
       // starts updating the mixer on the very next frame.
       vrmaPlayingRef.current = true;
-      vrmaActionRef.current = playVRMA(mixer, clip, opts);
+      // Gesture/preview clips: clamp=true so they hold their end pose until
+      // the next clip (idle/talking) fades in — prevents snapping to bind pose.
+      vrmaActionRef.current = playVRMA(mixer, clip, { clamp: true, ...opts });
       if (!vrmaActionRef.current) {
         vrmaPlayingRef.current = false;
         throw new Error('Gagal memulai animasi (mixer tidak siap)');
@@ -689,6 +774,17 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           //   - If TTS still active → resume talking loop
           //   - If idle clips available → cross-fade to idle (smooth, no T-pose)
           //   - Otherwise → fade out and wait for idle to be ready
+
+          // IMPORTANT: THREE disables a LoopOnce action after it fires 'finished'.
+          // Re-enable it briefly so playVRMA can see it as a valid source pose
+          // for the crossfade — otherwise prev actions = 0 and the next clip
+          // starts from bind pose (T-pose flash).
+          const finishedAction = vrmaActionRef.current;
+          if (finishedAction) {
+            finishedAction.enabled = true;
+            finishedAction.paused = true; // hold last frame, don't advance time
+          }
+
           vrmaActionRef.current = null;
           const idleClips = idleClipsRef.current;
           const m = mixerRef.current;
@@ -771,7 +867,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // Keep latest getAudioLevel in a ref so animate() doesn't need it as a dep.
   // This prevents the main useEffect from re-running (and reloading VRM + mixer)
   // every time the audio analyser reference changes.
-  const getAudioLevelRef = useRef(getAudioLevel);
+  const getAudioLevelRef = useRef<(() => number) | undefined>(getAudioLevel);
   getAudioLevelRef.current = getAudioLevel;
 
   const animate = useCallback(() => {
@@ -797,7 +893,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         updateMicroExpressions(elapsed, vrm, delta);
       }
 
-      const level = isSpeakingRef.current ? getAudioLevelRef.current() : 0;
+      const level = isSpeakingRef.current ? (getAudioLevelRef.current?.() ?? 0) : 0;
 
       // ALWAYS update mixer to prevent T-pose: even with no active actions,
       // mixer.update() is safe and ensures bones stay synchronized with any
@@ -805,6 +901,9 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       // are ready, and for smooth transitions between animations.
       if (mixerRef.current) {
         mixerRef.current.update(delta);
+      } else if (frameCountRef.current % 300 === 0) {
+        // Log warning every 5 seconds (at 60fps) if mixer is missing
+        console.warn('[Animate] Mixer is null — animations cannot play');
       }
 
       // Idle micro-gestures (chest-up only): apply ONLY when not talking and
@@ -820,6 +919,15 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       if (isSpeakingRef.current) {
         vrm.expressionManager?.setValue('aa', 0);
         updateLipSync(level, vrm, delta);
+      }
+
+      // Debug: log animation state every 5 seconds (dev only)
+      if (import.meta.env.DEV && frameCountRef.current % 600 === 0) {
+        console.log('[Animate] State:', {
+          idle: idleActionRef.current?.isRunning() ?? false,
+          talking: isTalkingPlayingRef.current,
+          speaking: isSpeakingRef.current,
+        });
       }
 
       vrm.update(delta);
@@ -1003,7 +1111,6 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       // Let THREE handle cleanup naturally on mixer dispose.
       // Just clear the ref and let GC clean up.
       mixerRef.current = null;
-      disconnectAudio();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl]);
