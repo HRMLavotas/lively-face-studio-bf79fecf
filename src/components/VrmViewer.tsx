@@ -944,29 +944,29 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     if (elapsedMs < targetInterval) return;
     lastFrameTimeRef.current = now - (elapsedMs % targetInterval);
 
-    const delta = clockRef.current.getDelta();
+    const rawDelta = clockRef.current.getDelta();
+    const delta = Math.min(rawDelta, 0.1); // clamp max 100ms untuk hindari delta spike
     const elapsed = clockRef.current.getElapsedTime();
     const vrm = vrmRef.current;
     frameCountRef.current++;
 
     if (vrm) {
       const runExpressions = !isMobileRef.current || frameCountRef.current % 2 === 0;
-      if (runExpressions) {
-        updateBlink(delta, vrm);
-        updateMicroExpressions(elapsed, vrm, delta);
-      }
 
-      const level = isSpeakingRef.current ? (getAudioLevelRef.current?.() ?? 0) : 0;
-
-      // ALWAYS update mixer to prevent T-pose: even with no active actions,
-      // mixer.update() is safe and ensures bones stay synchronized with any
-      // running animations. This is critical during initial load before clips
-      // are ready, and for smooth transitions between animations.
+      // ALWAYS update mixer FIRST — VRMA clips drive bones and expressions.
+      // Expression overrides (blink, micro-expressions) must run AFTER mixer
+      // so they are not overwritten by animation tracks.
       if (mixerRef.current) {
         mixerRef.current.update(delta);
       } else if (frameCountRef.current % 300 === 0) {
         // Log warning every 5 seconds (at 60fps) if mixer is missing
         console.warn('[Animate] Mixer is null — animations cannot play');
+      }
+
+      // Expression overrides run AFTER mixer.update so they win over any
+      // expression tracks baked into VRMA clips.
+      if (runExpressions) {
+        updateMicroExpressions(elapsed, vrm, delta);
       }
 
       // Idle micro-gestures (chest-up only): apply ONLY when not talking and
@@ -979,10 +979,21 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       updateIdleSmile(delta, vrm, isManualOrTalking);
 
       // Lip sync + expressions ALWAYS run (don't conflict with VRMA bones)
+      const level = isSpeakingRef.current ? (getAudioLevelRef.current?.() ?? 0) : 0;
       if (isSpeakingRef.current) {
         vrm.expressionManager?.setValue('aa', 0);
         updateLipSync(level, vrm, delta);
       }
+
+      // vrm.update() applies all expression weights to morph targets.
+      // CRITICAL: Must be called BEFORE updateBlink so blink can override
+      // any overrideBlink multipliers from other expressions.
+      vrm.update(delta);
+
+      // Blink ALWAYS runs every frame after vrm.update() — must not be throttled
+      // because vrm.update() resets morph targets every frame via clearAppliedWeight().
+      // If blink is skipped even one frame, the eye will flash open.
+      updateBlink(delta, vrm);
 
       // Debug: log animation state every 5 seconds (dev only)
       if (import.meta.env.DEV && frameCountRef.current % 600 === 0) {
@@ -992,8 +1003,6 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           speaking: isSpeakingRef.current,
         });
       }
-
-      vrm.update(delta);
     }
 
     // Update OrbitControls if enabled

@@ -1,4 +1,3 @@
-import gsap from 'gsap';
 import type { VRM } from '@pixiv/three-vrm';
 import type { MoodName } from './sentiment';
 
@@ -8,59 +7,108 @@ import type { MoodName } from './sentiment';
 
 let blinkTimer = 0;
 let nextBlinkIn = randomBlinkInterval();
-let isBlinking = false;
 
-function randomBlinkInterval(): number {
-  return 1 + Math.random() * 4;
+// Blink state machine — driven purely by delta, no gsap dependency
+type BlinkPhase = 'idle' | 'closing' | 'closed' | 'opening';
+let blinkPhase: BlinkPhase = 'idle';
+let blinkPhaseTimer = 0;
+
+const BLINK_CLOSE_DURATION = 0.15; // detik menutup mata
+const BLINK_HOLD_DURATION  = 0.10; // detik mata tertutup penuh
+const BLINK_OPEN_DURATION  = 0.20; // detik membuka mata (lebih lambat = lebih natural)
+
+// Expose untuk guard di applyPS / applyStd
+export function getIsBlinking(): boolean {
+  return blinkPhase !== 'idle';
 }
 
-export function updateBlink(delta: number, vrm: VRM): void {
-  if (isBlinking) return;
-  blinkTimer += delta;
-  if (blinkTimer >= nextBlinkIn) {
-    blinkTimer = 0;
-    nextBlinkIn = randomBlinkInterval();
-    triggerBlink(vrm);
+function randomBlinkInterval(): number {
+  return 4 + Math.random() * 5; // 4 - 9 detik antar kedip
+}
+
+/**
+ * Langsung tulis ke morphTargetInfluences setelah vrm.update() selesai.
+ * Ini satu-satunya cara yang dijamin bekerja karena vrm.update() bisa
+ * menimpa nilai via overrideBlink multiplier.
+ */
+function applyBlinkDirect(vrm: VRM, value: number): void {
+  const em = vrm.expressionManager;
+  if (!em) return;
+
+  const names: string[] = [];
+  if (hasExpression(vrm, 'blinkLeft'))         names.push('blinkLeft', 'blinkRight');
+  else if (hasExpression(vrm, 'EyeBlinkLeft')) names.push('EyeBlinkLeft', 'EyeBlinkRight');
+  else if (hasExpression(vrm, 'blink'))        names.push('blink');
+
+  for (const name of names) {
+    const expr = em.getExpression(name);
+    if (!expr) continue;
+
+    // Akses _binds → primitives[] → morphTargetInfluences langsung
+    // @ts-ignore
+    const binds = expr._binds as Array<{
+      primitives?: Array<{ morphTargetInfluences?: number[] }>;
+      index?: number;
+      weight?: number;
+    }>;
+
+    if (!binds?.length) continue;
+
+    for (const bind of binds) {
+      if (!bind.primitives || bind.index == null || bind.weight == null) continue;
+      for (const mesh of bind.primitives) {
+        if (mesh.morphTargetInfluences?.[bind.index] != null) {
+          mesh.morphTargetInfluences[bind.index] = bind.weight * value;
+        }
+      }
+    }
   }
 }
 
-function triggerBlink(vrm: VRM): void {
+export function updateBlink(delta: number, vrm: VRM): void {
   if (!vrm.expressionManager) return;
-  isBlinking = true;
 
-  // Perfect Sync: use per-eye blink if available, else fallback to 'blink'
-  const hasPerEye = hasExpression(vrm, 'EyeBlinkLeft');
-  const target = { value: 0 };
+  const setEyes = (v: number) => {
+    applyBlinkDirect(vrm, v);
+  };
 
-  gsap.to(target, {
-    value: 1,
-    duration: 0.12,
-    ease: 'power2.in',
-    onUpdate: () => {
-      if (hasPerEye) {
-        vrm.expressionManager?.setValue('EyeBlinkLeft', target.value);
-        vrm.expressionManager?.setValue('EyeBlinkRight', target.value);
-      } else {
-        vrm.expressionManager?.setValue('blink', target.value);
-      }
-    },
-    onComplete: () => {
-      gsap.to(target, {
-        value: 0,
-        duration: 0.08,
-        ease: 'power2.out',
-        onUpdate: () => {
-          if (hasPerEye) {
-            vrm.expressionManager?.setValue('EyeBlinkLeft', target.value);
-            vrm.expressionManager?.setValue('EyeBlinkRight', target.value);
-          } else {
-            vrm.expressionManager?.setValue('blink', target.value);
-          }
-        },
-        onComplete: () => { isBlinking = false; },
-      });
-    },
-  });
+  if (blinkPhase === 'idle') {
+    blinkTimer += delta;
+    if (blinkTimer >= nextBlinkIn) {
+      blinkTimer = 0;
+      nextBlinkIn = randomBlinkInterval();
+      blinkPhase = 'closing';
+      blinkPhaseTimer = 0;
+    } else {
+      // Pastikan mata terbuka penuh saat idle
+      setEyes(0);
+    }
+    return;
+  }
+
+  blinkPhaseTimer += delta;
+
+  if (blinkPhase === 'closing') {
+    const t = Math.min(blinkPhaseTimer / BLINK_CLOSE_DURATION, 1);
+    setEyes(t * t);
+    if (t >= 1) { blinkPhase = 'closed'; blinkPhaseTimer = 0; }
+
+  } else if (blinkPhase === 'closed') {
+    setEyes(1);
+    if (blinkPhaseTimer >= BLINK_HOLD_DURATION) {
+      blinkPhase = 'opening';
+      blinkPhaseTimer = 0;
+    }
+
+  } else if (blinkPhase === 'opening') {
+    const t = Math.min(blinkPhaseTimer / BLINK_OPEN_DURATION, 1);
+    setEyes(1 - (1 - t) * (1 - t));
+    if (t >= 1) {
+      setEyes(0);
+      blinkPhase = 'idle';
+      blinkTimer = 0;
+    }
+  }
 }
 
 // ============================================
@@ -215,17 +263,18 @@ const PS_ZERO: PerfectSyncWeights = {
 const PS_MOOD_PRESETS: Record<MoodName, PerfectSyncWeights> = {
   neutral: {
     ...PS_ZERO,
-    MouthSmileLeft: 0.08, MouthSmileRight: 0.08,
-    CheekSquintLeft: 0.05, CheekSquintRight: 0.05,
+    // Ekspresi netral yang lebih rileks tanpa senyum konstan
+    MouthSmileLeft: 0.02, MouthSmileRight: 0.02,
+    BrowOuterUpLeft: 0.03, BrowOuterUpRight: 0.03,
   },
   happy: {
     ...PS_ZERO,
-    MouthSmileLeft: 0.75, MouthSmileRight: 0.75,
-    CheekSquintLeft: 0.55, CheekSquintRight: 0.55,
-    EyeSquintLeft: 0.30, EyeSquintRight: 0.30,
-    BrowOuterUpLeft: 0.15, BrowOuterUpRight: 0.15,
-    MouthDimpleLeft: 0.30, MouthDimpleRight: 0.30,
-    CheekPuff: 0.10,
+    // Senyum natural tanpa mata terlalu tertutup
+    MouthSmileLeft: 0.65, MouthSmileRight: 0.65,
+    CheekSquintLeft: 0.25, CheekSquintRight: 0.25,
+    EyeSquintLeft: 0.12, EyeSquintRight: 0.12,
+    BrowOuterUpLeft: 0.18, BrowOuterUpRight: 0.18,
+    MouthDimpleLeft: 0.20, MouthDimpleRight: 0.20,
   },
   sad: {
     ...PS_ZERO,
@@ -238,14 +287,14 @@ const PS_MOOD_PRESETS: Record<MoodName, PerfectSyncWeights> = {
   },
   excited: {
     ...PS_ZERO,
-    MouthSmileLeft: 0.90, MouthSmileRight: 0.90,
-    CheekSquintLeft: 0.70, CheekSquintRight: 0.70,
-    EyeWideLeft: 0.40, EyeWideRight: 0.40,
-    BrowOuterUpLeft: 0.50, BrowOuterUpRight: 0.50,
-    BrowInnerUp: 0.35,
-    JawOpen: 0.20,
-    MouthDimpleLeft: 0.40, MouthDimpleRight: 0.40,
-    CheekPuff: 0.15,
+    // Excited dengan mata terbuka lebar, bukan tertutup
+    MouthSmileLeft: 0.80, MouthSmileRight: 0.80,
+    CheekSquintLeft: 0.30, CheekSquintRight: 0.30,
+    EyeWideLeft: 0.45, EyeWideRight: 0.45,
+    BrowOuterUpLeft: 0.55, BrowOuterUpRight: 0.55,
+    BrowInnerUp: 0.40,
+    JawOpen: 0.18,
+    MouthDimpleLeft: 0.35, MouthDimpleRight: 0.35,
   },
   sympathetic: {
     ...PS_ZERO,
@@ -257,18 +306,19 @@ const PS_MOOD_PRESETS: Record<MoodName, PerfectSyncWeights> = {
   },
   bored: {
     ...PS_ZERO,
-    EyeBlinkLeft: 0.35, EyeBlinkRight: 0.35,
+    EyeSquintLeft: 0.15, EyeSquintRight: 0.15,
     BrowDownLeft: 0.20, BrowDownRight: 0.20,
     MouthPressLeft: 0.15, MouthPressRight: 0.15,
     MouthStretchLeft: 0.10, MouthStretchRight: 0.10,
   },
   curious: {
     ...PS_ZERO,
-    BrowInnerUp: 0.50,
-    BrowOuterUpLeft: 0.20, BrowOuterUpRight: 0.35,
-    EyeWideLeft: 0.15, EyeWideRight: 0.25,
-    MouthSmileLeft: 0.10, MouthSmileRight: 0.10,
-    JawOpen: 0.08,
+    // Ekspresi penasaran dengan mata terbuka dan alis terangkat
+    BrowInnerUp: 0.45,
+    BrowOuterUpLeft: 0.25, BrowOuterUpRight: 0.35,
+    EyeWideLeft: 0.20, EyeWideRight: 0.28,
+    MouthSmileLeft: 0.08, MouthSmileRight: 0.08,
+    JawOpen: 0.06,
   },
   thinking: {
     ...PS_ZERO,
@@ -291,7 +341,6 @@ const PS_MOOD_PRESETS: Record<MoodName, PerfectSyncWeights> = {
     ...PS_ZERO,
     MouthSmileLeft: 1.0, MouthSmileRight: 1.0,
     CheekSquintLeft: 0.85, CheekSquintRight: 0.85,
-    EyeBlinkLeft: 0.50, EyeBlinkRight: 0.50,
     EyeSquintLeft: 0.60, EyeSquintRight: 0.60,
     JawOpen: 0.35,
     MouthDimpleLeft: 0.50, MouthDimpleRight: 0.50,
@@ -309,12 +358,12 @@ const PS_MOOD_PRESETS: Record<MoodName, PerfectSyncWeights> = {
   },
   embarrassed: {
     ...PS_ZERO,
-    MouthSmileLeft: 0.40, MouthSmileRight: 0.40,
-    CheekSquintLeft: 0.30, CheekSquintRight: 0.30,
-    EyeSquintLeft: 0.25, EyeSquintRight: 0.25,
-    BrowInnerUp: 0.35,
-    MouthPressLeft: 0.20, MouthPressRight: 0.20,
-    EyeBlinkLeft: 0.15, EyeBlinkRight: 0.15,
+    // Malu dengan senyum kecil dan mata sedikit menunduk
+    MouthSmileLeft: 0.35, MouthSmileRight: 0.35,
+    CheekSquintLeft: 0.18, CheekSquintRight: 0.18,
+    EyeSquintLeft: 0.15, EyeSquintRight: 0.15,
+    BrowInnerUp: 0.30,
+    MouthPressLeft: 0.15, MouthPressRight: 0.15,
   },
   disgusted: {
     ...PS_ZERO,
@@ -337,18 +386,18 @@ const STD_ZERO: StandardWeights = {
 };
 
 const STD_MOOD_PRESETS: Record<MoodName, StandardWeights> = {
-  neutral:     { ...STD_ZERO, happy: 0.10, relaxed: 0.10 },
-  happy:       { ...STD_ZERO, happy: 0.65, relaxed: 0.20, blinkLeft: 0.15, blinkRight: 0.15 },
+  neutral:     { ...STD_ZERO, relaxed: 0.08 },
+  happy:       { ...STD_ZERO, happy: 0.60, relaxed: 0.15 },
   sad:         { ...STD_ZERO, sad: 0.70, relaxed: 0.10 },
-  excited:     { ...STD_ZERO, happy: 0.80, surprised: 0.35 },
+  excited:     { ...STD_ZERO, happy: 0.75, surprised: 0.30 },
   sympathetic: { ...STD_ZERO, sad: 0.30, relaxed: 0.35 },
-  bored:       { ...STD_ZERO, relaxed: 0.30, blinkLeft: 0.25, blinkRight: 0.25 },
-  curious:     { ...STD_ZERO, surprised: 0.30, happy: 0.10 },
-  thinking:    { ...STD_ZERO, relaxed: 0.15 },
+  bored:       { ...STD_ZERO, relaxed: 0.35 },
+  curious:     { ...STD_ZERO, surprised: 0.35, happy: 0.08 },
+  thinking:    { ...STD_ZERO, relaxed: 0.18 },
   angry:       { ...STD_ZERO, angry: 0.70 },
-  laughing:    { ...STD_ZERO, happy: 0.95, blinkLeft: 0.45, blinkRight: 0.45 },
+  laughing:    { ...STD_ZERO, happy: 0.90 },
   surprised:   { ...STD_ZERO, surprised: 0.85 },
-  embarrassed: { ...STD_ZERO, happy: 0.35, relaxed: 0.25 },
+  embarrassed: { ...STD_ZERO, happy: 0.30, relaxed: 0.25 },
   disgusted:   { ...STD_ZERO, angry: 0.40, sad: 0.20 },
 };
 
@@ -415,6 +464,8 @@ function lerpStd(delta: number): void {
 function applyPS(vrm: VRM, noise: number): void {
   const em = vrm.expressionManager!;
   for (const [k, v] of Object.entries(_currentPS)) {
+    // Jangan timpa EyeBlinkLeft/Right saat sistem blink sedang aktif
+    if (getIsBlinking() && (k === 'EyeBlinkLeft' || k === 'EyeBlinkRight')) continue;
     const val = Math.max(0, Math.min(1, v + (k.startsWith('mouthSmile') ? noise * 0.5 : 0)));
     try { em.setValue(k, val); } catch (_) { /* expression may not exist */ }
   }
@@ -437,8 +488,11 @@ function applyStd(vrm: VRM, noise: number): void {
   set('relaxed',  _currentStd.relaxed);
   set('surprised', _currentStd.surprised);
   set('angry',    _currentStd.angry);
-  set('blinkLeft',  _currentStd.blinkLeft);
-  set('blinkRight', _currentStd.blinkRight);
+  // Jangan timpa blink saat sistem blink sedang aktif
+  if (!getIsBlinking()) {
+    set('blinkLeft',  _currentStd.blinkLeft);
+    set('blinkRight', _currentStd.blinkRight);
+  }
   // browInnerUp etc. only exist on some models — set() handles missing gracefully
   set('browInnerUp',   _currentStd.browInnerUp + Math.abs(noise) * 0.5);
   set('browDownLeft',  _currentStd.browDownLeft);
@@ -578,15 +632,15 @@ export function updateIdleMicroGestures(
 // ============================================
 
 let _smileTimer = 0;
-let _nextSmileIn = 6 + Math.random() * 5;
+let _nextSmileIn = 8 + Math.random() * 7; // Lebih jarang: 8-15 detik
 let _smileActive = false;
 let _smilePhase = 0;
 
-const SMILE_DURATION = 2.2;
-const SMILE_PEAK_PS  = 0.70;
-const SMILE_BASE_PS  = 0.08;
-const SMILE_PEAK_STD = 0.55;
-const SMILE_BASE_STD = 0.12;
+const SMILE_DURATION = 2.5; // Lebih lama dan natural
+const SMILE_PEAK_PS  = 0.45; // Senyum lebih halus
+const SMILE_BASE_PS  = 0.02; // Base minimal
+const SMILE_PEAK_STD = 0.40; // Senyum lebih halus untuk standard
+const SMILE_BASE_STD = 0.05; // Base minimal
 
 export function updateIdleSmile(delta: number, vrm: VRM, suppressed = false): void {
   if (!vrm.expressionManager) return;
@@ -622,7 +676,7 @@ export function updateIdleSmile(delta: number, vrm: VRM, suppressed = false): vo
   if (_smilePhase >= 1) {
     _smileActive = false;
     _smilePhase = 0;
-    _nextSmileIn = 5 + Math.random() * 6;
+    _nextSmileIn = 8 + Math.random() * 7; // 8-15 detik
     if (mode === 'perfectsync') {
       try { vrm.expressionManager.setValue('MouthSmileLeft',  base); } catch (_) { /* ok */ }
       try { vrm.expressionManager.setValue('MouthSmileRight', base); } catch (_) { /* ok */ }
@@ -632,14 +686,25 @@ export function updateIdleSmile(delta: number, vrm: VRM, suppressed = false): vo
     return;
   }
 
-  const wave  = Math.sin(_smilePhase * Math.PI);
+  // Smooth ease in-out curve untuk transisi lebih natural
+  const t = _smilePhase;
+  const eased = t < 0.5 
+    ? 2 * t * t 
+    : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const wave = Math.sin(eased * Math.PI);
   const value = base + (peak - base) * wave;
 
   if (mode === 'perfectsync') {
     try { vrm.expressionManager.setValue('MouthSmileLeft',  value); } catch (_) { /* ok */ }
     try { vrm.expressionManager.setValue('MouthSmileRight', value); } catch (_) { /* ok */ }
-    try { vrm.expressionManager.setValue('CheekSquintLeft',  value * 0.6); } catch (_) { /* ok */ }
-    try { vrm.expressionManager.setValue('CheekSquintRight', value * 0.6); } catch (_) { /* ok */ }
+    // Cheek squint lebih minimal dan hanya saat peak
+    const cheekValue = Math.max(0, (value - base) * 0.25);
+    try { vrm.expressionManager.setValue('CheekSquintLeft',  cheekValue); } catch (_) { /* ok */ }
+    try { vrm.expressionManager.setValue('CheekSquintRight', cheekValue); } catch (_) { /* ok */ }
+    // Tambah sedikit brow raise untuk ekspresi lebih hidup
+    const browValue = Math.max(0, (value - base) * 0.15);
+    try { vrm.expressionManager.setValue('BrowOuterUpLeft',  browValue); } catch (_) { /* ok */ }
+    try { vrm.expressionManager.setValue('BrowOuterUpRight', browValue); } catch (_) { /* ok */ }
   } else {
     vrm.expressionManager.setValue('happy', value);
   }
