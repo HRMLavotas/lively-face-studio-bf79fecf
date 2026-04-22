@@ -11,7 +11,11 @@ export type MoodName =
   | 'bored'
   | 'curious'
   | 'thinking'
-  | 'angry';
+  | 'angry'
+  | 'laughing'
+  | 'surprised'
+  | 'embarrassed'
+  | 'disgusted';
 
 const RULES: { mood: MoodName; weight: number; patterns: RegExp[] }[] = [
   {
@@ -24,21 +28,50 @@ const RULES: { mood: MoodName; weight: number; patterns: RegExp[] }[] = [
     ],
   },
   {
+    mood: 'laughing',
+    weight: 1.3,
+    patterns: [
+      /\b(haha|hehe|hihi|lol|wkwk+|lucu|ngakak|ketawa|tertawa|geli|kocak)\b/i,
+      /(😂|🤣|😆|😹)/,
+    ],
+  },
+  {
+    mood: 'surprised',
+    weight: 1.1,
+    patterns: [
+      /\b(eh|hah|heh|serius|beneran|masa|kok bisa|tidak mungkin|really|seriously|omg|astaga|ya ampun)\b/i,
+      /(😲|😮|🤯|😱|😳)/,
+    ],
+  },
+  {
+    mood: 'embarrassed',
+    weight: 1.0,
+    patterns: [
+      /\b(malu|canggung|awkward|maaf banget|sori|ups|aduh|duh|salah aku|blush)\b/i,
+      /(😳|🫣|😅|🙈)/,
+    ],
+  },
+  {
+    mood: 'disgusted',
+    weight: 1.0,
+    patterns: [
+      /\b(jijik|eww|yuck|menjijikkan|kotor|bau|najis|ugh)\b/i,
+      /(🤢|🤮|😖|😣)/,
+    ],
+  },
+  {
     mood: 'happy',
     weight: 1.0,
     patterns: [
-      /\b(haha|hehe|hihi|lol|senang|bahagia|happy|tentu|baik|bagus|sip|oke|good|great|nice)\b/i,
+      /\b(senang|bahagia|happy|tentu|baik|bagus|sip|oke|good|great|nice|alhamdulillah)\b/i,
       /(😀|😃|😄|😁|😊|🙂|😉|😺|😸|❤️|💖|👍)/,
     ],
   },
   {
-    // Empathic / heavy emotional context — fires on user statements about
-    // loss, illness, struggles, so the avatar reacts with sympathy *before*
-    // the AI even responds.
     mood: 'sympathetic',
     weight: 1.4,
     patterns: [
-      /\b(meninggal|wafat|kehilangan|ditinggal|kehilangan|berduka|berpulang)\b/i,
+      /\b(meninggal|wafat|kehilangan|ditinggal|berduka|berpulang)\b/i,
       /\b(sakit|sakit parah|opname|rumah sakit|kanker|tumor|operasi)\b/i,
       /\b(putus|cerai|diselingkuhi|patah hati|broken)\b/i,
       /\b(gagal|ditolak|dipecat|kena phk|bangkrut)\b/i,
