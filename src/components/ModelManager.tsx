@@ -9,7 +9,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Upload, Trash2, Pencil, Check, X, Bot, Cpu, ExternalLink } from 'lucide-react';
+import { Upload, Trash2, Pencil, Check, X, Bot, Cpu, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
 import { UploadProgress } from '@/components/UploadProgress';
 import { toast } from 'sonner';
 
@@ -35,7 +35,42 @@ export default function ModelManager({ models, onRefresh }: ModelManagerProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: '', gender: '', personality: '' });
   const [deleteTarget, setDeleteTarget] = useState<VrmModel | null>(null);
+  const [enhancing, setEnhancing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleEnhancePersonality = async () => {
+    if (!editForm.gender || !['male', 'female'].includes(editForm.gender)) {
+      toast.error('Pilih Gender (Male/Female) dulu sebelum enhance.');
+      return;
+    }
+    setEnhancing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('enhance-personality', {
+        body: {
+          name: editForm.name,
+          gender: editForm.gender,
+          currentPersonality: editForm.personality,
+        },
+      });
+      if (error) {
+        const msg = (error as { message?: string }).message ?? 'Gagal enhance';
+        if (msg.includes('429')) toast.error('Rate limit AI tercapai. Coba lagi sebentar.');
+        else if (msg.includes('402')) toast.error('Kredit AI habis. Tambah kredit di workspace.');
+        else toast.error(msg);
+        return;
+      }
+      if (data?.personality) {
+        setEditForm((f) => ({ ...f, personality: data.personality }));
+        toast.success('Persona diperbarui dengan AI');
+      } else if (data?.error) {
+        toast.error(data.error);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Gagal enhance');
+    } finally {
+      setEnhancing(false);
+    }
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -208,16 +243,34 @@ export default function ModelManager({ models, onRefresh }: ModelManagerProps) {
                       <SelectContent>
                         <SelectItem value="male">Male</SelectItem>
                         <SelectItem value="female">Female</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Textarea
-                      value={editForm.personality}
-                      onChange={(e) => setEditForm({ ...editForm, personality: e.target.value })}
-                      placeholder="Deskripsi kepribadian model…"
-                      className="bg-secondary/50 border-border/50 text-sm resize-none"
-                      rows={3}
-                    />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-medium text-muted-foreground">Kepribadian</label>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={handleEnhancePersonality}
+                          disabled={enhancing}
+                          className="h-7 text-[11px] gap-1 text-primary hover:text-primary hover:bg-primary/10"
+                        >
+                          {enhancing ? (
+                            <><Loader2 className="w-3 h-3 animate-spin" /> Enhancing…</>
+                          ) : (
+                            <><Sparkles className="w-3 h-3" /> Enhance dengan AI</>
+                          )}
+                        </Button>
+                      </div>
+                      <Textarea
+                        value={editForm.personality}
+                        onChange={(e) => setEditForm({ ...editForm, personality: e.target.value })}
+                        placeholder="Deskripsi kepribadian model… atau klik 'Enhance dengan AI' untuk generate otomatis."
+                        className="bg-secondary/50 border-border/50 text-sm resize-none font-mono text-[12px] leading-relaxed"
+                        rows={10}
+                      />
+                    </div>
                     <div className="flex gap-2">
                       <Button size="sm" onClick={saveEdit} className="gap-1.5 h-8 text-xs flex-1">
                         <Check className="w-3.5 h-3.5" /> Simpan
