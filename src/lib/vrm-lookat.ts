@@ -15,9 +15,9 @@ import type { VRM } from '@pixiv/three-vrm';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const EYE_SMOOTH_IN   = 6.0;  // eye lerp speed toward target
-const EYE_SMOOTH_OUT  = 2.5;  // eye lerp speed returning to neutral
+const EYE_SMOOTH_OUT  = 4.0;  // eye lerp speed returning to neutral (faster = snappier return)
 const HEAD_SMOOTH_IN  = 2.8;  // head follows eyes with lag
-const HEAD_SMOOTH_OUT = 1.5;
+const HEAD_SMOOTH_OUT = 3.0;  // head return speed — faster than in so it doesn't lag behind
 const IDLE_AFTER      = 5.0;  // seconds before returning to neutral
 const TARGET_DIST     = 2.0;  // metres in front for neutral gaze
 
@@ -35,6 +35,7 @@ const SACCADE_DURATION     = 0.08;  // seconds per saccade
 let _mouseNdcX    = 0;
 let _mouseNdcY    = 0;
 let _lastMoveTime = 0;
+let _mouseInside  = false;  // true only while pointer is inside the container
 let _enabled      = true;
 let _ready        = false;
 
@@ -69,6 +70,7 @@ const _lookDir = new THREE.Vector3();
 export function initLookAt(container: HTMLElement): () => void {
   _ready        = false;
   _lastMoveTime = 0;
+  _mouseInside  = false;
   _mouseNdcX    = 0;
   _mouseNdcY    = 0;
   _headYaw      = 0;
@@ -84,8 +86,9 @@ export function initLookAt(container: HTMLElement): () => void {
     _mouseNdcX =  ((e.clientX - r.left) / r.width)  * 2 - 1;
     _mouseNdcY = -((e.clientY - r.top)  / r.height) * 2 + 1;
     _lastMoveTime = performance.now() / 1000;
+    _mouseInside  = true;
   };
-  const onLeave = () => { _lastMoveTime = 0; };
+  const onLeave = () => { _lastMoveTime = 0; _mouseInside = false; };
 
   container.addEventListener('mousemove', onMove);
   container.addEventListener('mouseleave', onLeave);
@@ -115,7 +118,8 @@ export function updateLookAt(
   if (!_enabled || !vrm.lookAt || !vrm.humanoid) return;
 
   const now  = performance.now() / 1000;
-  const idle = _lastMoveTime === 0 || (now - _lastMoveTime) > IDLE_AFTER;
+  // Idle when: mouse left container OR hasn't moved for IDLE_AFTER seconds
+  const idle = !_mouseInside || _lastMoveTime === 0 || (now - _lastMoveTime) > IDLE_AFTER;
 
   // Get head world position
   const headBone = vrm.humanoid.getNormalizedBoneNode('head');
@@ -198,19 +202,26 @@ export function updateLookAt(
   vrm.lookAt.update(delta);
 
   // ── Head/neck: derive from look direction, lag behind eyes ───────────────
-  vrm.lookAt.getLookAtWorldDirection(_lookDir);
-
-  const yawTarget   = Math.atan2(_lookDir.x, _lookDir.z);
-  const pitchTarget = -Math.asin(Math.max(-1, Math.min(1, _lookDir.y)));
-
-  const yawClamped   = Math.max(-MAX_HEAD_YAW,   Math.min(MAX_HEAD_YAW,   yawTarget));
-  const pitchClamped = Math.max(-MAX_HEAD_PITCH,  Math.min(MAX_HEAD_PITCH, pitchTarget));
-
-  // Head lags behind eyes naturally
   const headSpeed = !idle ? HEAD_SMOOTH_IN : HEAD_SMOOTH_OUT;
   const headT = Math.min(headSpeed * delta, 1);
-  _headYaw   += (yawClamped   - _headYaw)   * headT;
-  _headPitch += (pitchClamped - _headPitch) * headT;
+
+  if (idle) {
+    // Return directly to zero — don't derive from _lookDir which may still be
+    // mid-lerp and cause the head to overshoot or stay tilted
+    _headYaw   += (0 - _headYaw)   * headT;
+    _headPitch += (0 - _headPitch) * headT;
+  } else {
+    vrm.lookAt.getLookAtWorldDirection(_lookDir);
+
+    const yawTarget   = Math.atan2(_lookDir.x, _lookDir.z);
+    const pitchTarget = -Math.asin(Math.max(-1, Math.min(1, _lookDir.y)));
+
+    const yawClamped   = Math.max(-MAX_HEAD_YAW,   Math.min(MAX_HEAD_YAW,   yawTarget));
+    const pitchClamped = Math.max(-MAX_HEAD_PITCH,  Math.min(MAX_HEAD_PITCH, pitchTarget));
+
+    _headYaw   += (yawClamped   - _headYaw)   * headT;
+    _headPitch += (pitchClamped - _headPitch) * headT;
+  }
 
   // Apply to neck (40%) and head (60%)
   const neckBone = vrm.humanoid.getNormalizedBoneNode('neck');
