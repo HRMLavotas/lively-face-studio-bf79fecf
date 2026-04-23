@@ -85,7 +85,7 @@ function detectLang(text: string): string {
 
 export function speakWithWebSpeech(text: string, opts: WebSpeechTTSOptions = {}): void {
   if (!isWebSpeechTTSSupported()) {
-    opts.onError?.({ error: 'not-supported' } as SpeechSynthesisErrorEvent);
+    opts.onError?.({ error: 'not-supported' } as unknown as SpeechSynthesisErrorEvent);
     return;
   }
 

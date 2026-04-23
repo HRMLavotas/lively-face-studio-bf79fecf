@@ -16,6 +16,7 @@ interface StoredConversation {
   title: string;
   updated_at: string;
   messages: ChatMessage[];
+  exported_at?: string;
 }
 
 function loadFromStorage(userId: string): StoredConversation[] {

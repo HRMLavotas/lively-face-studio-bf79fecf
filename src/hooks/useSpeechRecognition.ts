@@ -17,7 +17,7 @@ export interface UseSpeechRecognitionResult {
   error: string | null;
 }
 
-function getSpeechRecognition(): (new () => SpeechRecognition) | null {
+function getSpeechRecognition(): (new () => any) | null {
   if (typeof window === 'undefined') return null;
   return (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition ?? null;
 }
