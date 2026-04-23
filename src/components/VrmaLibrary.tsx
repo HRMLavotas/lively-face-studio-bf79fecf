@@ -194,9 +194,9 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
 
                     {/* Language keyword tabs */}
                     <Tabs defaultValue="id" className="w-full">
-                      <TabsList className="h-7 grid grid-cols-7 w-full bg-background/50">
+                      <TabsList className="h-7 flex w-full overflow-x-auto bg-background/50 gap-0.5 p-0.5">
                         {LANGS.map((l) => (
-                          <TabsTrigger key={l} value={l} className="text-[10px] px-0.5 h-6 relative data-[state=active]:bg-primary/20">
+                          <TabsTrigger key={l} value={l} className="text-[10px] px-2 h-6 shrink-0 relative data-[state=active]:bg-primary/20">
                             {LANG_LABEL[l]}
                             {(editState.keywordsByLang[l] ?? '').trim() && (
                               <span className="absolute top-0.5 right-0.5 w-1 h-1 rounded-full bg-primary" />
@@ -226,78 +226,53 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
                     </div>
                   </div>
                 ) : (
-                  /* View mode — 2-row layout agar semua tombol terlihat */
+                  /* View mode — name only + action buttons */
                   <div
                     key={item.id}
-                    className={`rounded-xl border transition-all ${
-                      item.is_active ? 'border-border/50 bg-secondary/30' : 'border-border/30 bg-secondary/15 opacity-60'
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                      item.is_active
+                        ? 'border-border/40 bg-secondary/30'
+                        : 'border-border/20 bg-secondary/10 opacity-50'
                     }`}
                   >
-                    {/* Row 1: nama + keywords */}
-                    <div className="px-3 pt-2.5 pb-1.5">
-                      <p className="text-sm font-medium text-foreground truncate">{item.name}</p>
-                      {item.trigger_keywords.length > 0 ? (
-                        <p className="text-[10px] text-muted-foreground/70 truncate font-mono mt-0.5">
-                          {item.trigger_keywords.join(', ')}
-                        </p>
-                      ) : (
-                        <p className="text-[10px] text-muted-foreground/35 font-mono italic mt-0.5">no keywords</p>
-                      )}
-                    </div>
+                    {/* Name — truncates, never pushes buttons out */}
+                    <span className="flex-1 min-w-0 text-xs font-medium text-foreground truncate">
+                      {item.name}
+                    </span>
 
-                    {/* Row 2: actions */}
-                    <div className="flex items-center gap-1 px-2 pb-2 border-t border-border/20 pt-1.5">
-                      {/* Play — paling penting, dibuat lebih besar */}
-                      <Button
-                        size="sm"
-                        variant={playingId === item.id ? 'default' : 'outline'}
-                        className={`h-7 gap-1.5 text-xs flex-1 ${
-                          playingId === item.id
-                            ? 'bg-primary/20 text-primary border-primary/40 hover:bg-primary/30'
-                            : 'border-border/50 text-muted-foreground hover:text-primary hover:border-primary/40'
-                        }`}
-                        onClick={() => handlePlay(item)}
-                      >
-                        {playingId === item.id
-                          ? <><Loader2 className="w-3 h-3 animate-spin" /> Memutar…</>
-                          : <><Play className="w-3 h-3" /> Play</>
-                        }
-                      </Button>
+                    {/* Buttons — fixed, never shrink */}
+                    <button
+                      onClick={() => handlePlay(item)}
+                      title="Play"
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                    >
+                      {playingId === item.id
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                        : <Play className="w-3.5 h-3.5" />
+                      }
+                    </button>
 
-                      {/* Toggle active */}
-                      <div className="flex items-center gap-1 px-2 border-l border-border/30">
-                        <span className="text-[10px] text-muted-foreground/60">
-                          {item.is_active ? 'On' : 'Off'}
-                        </span>
-                        <Switch
-                          checked={item.is_active}
-                          onCheckedChange={() => handleToggle(item)}
-                          className="scale-75"
-                        />
-                      </div>
+                    <Switch
+                      checked={item.is_active}
+                      onCheckedChange={() => handleToggle(item)}
+                      className="shrink-0 scale-[0.6]"
+                    />
 
-                      {/* Edit */}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                        onClick={() => startEdit(item)}
-                        title="Edit"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
+                    <button
+                      onClick={() => startEdit(item)}
+                      title="Edit"
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
 
-                      {/* Delete */}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleDelete(item)}
-                        title="Hapus"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
+                    <button
+                      onClick={() => handleDelete(item)}
+                      title="Hapus"
+                      className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )
               )}
