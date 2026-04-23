@@ -65,6 +65,7 @@ export type Database = {
       voice_settings: {
         Row: {
           created_at: string
+          gender: string
           id: string
           is_active: boolean
           user_id: string | null
@@ -73,6 +74,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          gender?: string
           id?: string
           is_active?: boolean
           user_id?: string | null
@@ -81,6 +83,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          gender?: string
           id?: string
           is_active?: boolean
           user_id?: string | null
