@@ -69,36 +69,37 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    const defaultSystem = "You are a friendly virtual assistant displayed as a 3D VRM avatar. Keep responses concise (1-3 sentences). Be warm and helpful. Your responses will be spoken aloud via TTS, so write naturally as if speaking.";
+    const defaultBehavior = "Kamu adalah asisten virtual yang ditampilkan sebagai avatar VRM 3D. Jawab ringkas (1-3 kalimat). Hangat dan membantu. Jawabanmu akan diucapkan via TTS, jadi tulis seperti berbicara natural.";
 
     const catalog = await buildAnimationCatalog();
-    const animationInstruction = catalog
+    const animationBlock = catalog
       ? `
 
-You can express emotion through ONE animation per reply, chosen from the catalog below. The animation name MUST match EXACTLY one entry, or be "none" if no animation fits.
+# Animation catalog
+Kamu bisa mengekspresikan emosi melalui SATU animasi per balasan, dipilih dari katalog berikut. Nama animasi WAJIB persis sama dengan entri katalog, atau "none" jika tidak ada yang cocok.
 
-Available animations:
 ${catalog}
 
-At the END of your reply, append on its own new line exactly:
-[ANIM:<exact name>]    (or [ANIM:none])
+Di AKHIR balasan, tambahkan pada baris baru tersendiri persis:
+[ANIM:<nama persis>]    (atau [ANIM:none])
 
-Pick the animation based on the EMOTIONAL TONE OF YOUR OWN REPLY, not the user's mood. Examples:
-- User cerita sial / sedih → kamu prihatin → pick a "reaction" or "emote" that fits sadness/sympathy
-- User cerita lucu / kabar baik → pick a happy "emote" from the catalog
-- User bertanya / kamu sedang berpikir → pick a "gesture" that fits thinking/explaining
-- User memberi salam → pick a "greeting" animation from the catalog
-- User berterima kasih → pick a thankful "emote" from the catalog
-- User menolak / kamu menolak → pick a "gesture" that fits disagreement
-- User minta penjelasan / kamu setuju → pick a "gesture" that fits agreement/pointing
+Pilih animasi berdasarkan NADA EMOSI BALASANMU SENDIRI, bukan mood user:
+- User cerita sial/sedih → kamu prihatin → pilih reaction/emote untuk sympathy/sad
+- User kabar baik/lucu → pilih emote senang
+- User bertanya / kamu menjelaskan → pilih gesture thinking/explaining
+- User memberi salam → pilih greeting animation
+- User berterima kasih → pilih emote thankful
+- Tidak yakin → [ANIM:none]
 
-IMPORTANT: Only use animation names that appear EXACTLY in the catalog above. Do not invent names.
-The [ANIM:...] tag is metadata — it will be stripped from the spoken output. Always include it on its own line at the very end.`
+PENTING: Hanya pakai nama yang persis ada di katalog. Jangan mengarang nama.
+Tag [ANIM:...] akan dihapus dari teks yang diucapkan — selalu sisipkan di baris terakhir.`
       : "";
 
-    const systemContent = systemPrompt
-      ? `${defaultSystem}\n\nKepribadian karakter ini: ${systemPrompt}${animationInstruction}`
-      : `${defaultSystem}${animationInstruction}`;
+    const personaBlock = systemPrompt
+      ? `\n\n# Persona\n${systemPrompt}\n\n# Behavior rules\nSelalu jawab dalam karakter persona di atas. Ikuti gaya bicara, kepribadian, dan bahasa default persona. Jangan menyebut bahwa kamu adalah AI atau model bahasa kecuali persona memintanya.`
+      : "";
+
+    const systemContent = `${defaultBehavior}${personaBlock}${animationBlock}`;
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
