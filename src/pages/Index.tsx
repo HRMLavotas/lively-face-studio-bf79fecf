@@ -207,17 +207,17 @@ export default function Index() {
   });
 
   return (
-    <div className="relative h-[100dvh] w-screen overflow-hidden bg-background flex">
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-background cyber-grid-animated flex">
       <NewUserModelBanner />
       <OnboardingGuide />
       <KeyboardShortcutsHelp />
 
       {/* VRM Viewer — main area */}
-      <div className="flex-1 relative min-w-0">
+      <div className="flex-1 relative min-w-0 scanlines">
         <Suspense
           fallback={
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+              <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin neon-glow-purple" />
             </div>
           }
         >
@@ -258,10 +258,10 @@ export default function Index() {
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2.5 md:px-4 md:py-3 z-10">
           {/* App name */}
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center">
-              <span className="text-primary text-xs font-bold">V</span>
+            <div className="w-7 h-7 rounded-lg bg-primary/15 border border-neon-purple-bright flex items-center justify-center neon-glow-purple">
+              <span className="text-primary text-xs font-bold text-neon-purple">V</span>
             </div>
-            <h1 className="text-sm font-semibold text-foreground/90 tracking-tight hidden sm:block">
+            <h1 className="text-sm font-semibold text-foreground/90 tracking-tight hidden sm:block text-neon-purple">
               VRM Assistant
             </h1>
           </div>
@@ -276,7 +276,7 @@ export default function Index() {
               variant="outline"
               size="icon"
               onClick={handleToggleChat}
-              className="relative h-8 w-8 border-border/60 bg-secondary/60 backdrop-blur-md hover:bg-secondary/80 transition-colors"
+              className="relative h-8 w-8 border-neon-purple-bright cyber-glass hover-neon-glow transition-all"
               title={`${chatOpen ? 'Tutup' : 'Buka'} chat (Ctrl+K) · ? untuk shortcuts`}
             >
               {chatOpen
@@ -285,7 +285,7 @@ export default function Index() {
               }
               {/* Unread badge */}
               {!chatOpen && hasUnread && (
-                <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background animate-pulse" />
+                <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background animate-pulse neon-glow-purple-strong" />
               )}
             </Button>
           </div>
@@ -315,7 +315,7 @@ export default function Index() {
         />
       ) : (
         chatOpen && (
-          <div className="w-[320px] lg:w-[360px] h-full shrink-0 border-l border-border/40">
+          <div className="w-[320px] lg:w-[360px] h-full shrink-0 border-l border-neon-purple-bright">
             <ChatPanel
               onSpeakStart={handleSpeakStart}
               onSpeakEnd={handleSpeakEnd}

@@ -430,7 +430,7 @@ export default function ChatPanel({
     <div className="space-y-2">
       {/* Offline banner */}
       {!online && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg cyber-glass border border-destructive/40 text-xs text-destructive neon-glow-magenta">
           <WifiOff className="w-3.5 h-3.5 shrink-0" />
           <span>Tidak ada koneksi internet</span>
         </div>
@@ -438,20 +438,20 @@ export default function ChatPanel({
 
       {/* STT interim transcript */}
       {speechMode && stt.status === 'listening' && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20 text-xs text-primary/80 animate-pulse">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg cyber-glass border border-neon-purple-bright text-xs text-primary/80 pulse-neon">
           <Radio className="w-3.5 h-3.5 shrink-0" />
           <span>{stt.transcript || 'Mendengarkan…'}</span>
         </div>
       )}
       {/* Countdown before auto-send */}
       {speechMode && sendCountdown !== null && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-secondary/60 border border-border/40 text-xs">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg cyber-glass border border-neon-purple text-xs">
           <span className="text-foreground/70 truncate flex-1">{pendingTranscriptRef.current}</span>
           <span className="text-muted-foreground shrink-0">Kirim dalam {sendCountdown}s</span>
         </div>
       )}
       {speechMode && stt.error && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg cyber-glass border border-destructive/40 text-xs text-destructive">
           <MicOff className="w-3.5 h-3.5 shrink-0" />
           <span>{stt.error}</span>
         </div>
@@ -481,18 +481,18 @@ export default function ChatPanel({
             }
             disabled={isLoading || !online}
             rows={1}
-            className="resize-none min-h-[40px] max-h-[120px] bg-secondary/50 border-border/60 text-sm placeholder:text-muted-foreground/50 focus:border-primary/50 transition-colors scrollbar-thin"
+            className="resize-none min-h-[40px] max-h-[120px] cyber-glass border-neon-purple text-sm placeholder:text-muted-foreground/50 focus:border-neon-purple-bright focus:neon-glow-purple transition-all scrollbar-thin"
             style={{ height: 'auto' }}
           />
         </div>
         {isLoading ? (
           <Button type="button" size="icon" onClick={handleStop}
-            className="h-10 w-10 shrink-0 bg-destructive/80 hover:bg-destructive text-white shadow-sm" title="Hentikan">
+            className="h-10 w-10 shrink-0 bg-destructive/80 hover:bg-destructive text-white shadow-sm neon-glow-magenta" title="Hentikan">
             <Square className="w-3.5 h-3.5 fill-current" />
           </Button>
         ) : (
           <Button type="button" size="icon" onClick={() => handleSend()} disabled={!input.trim() || !online}
-            className="h-10 w-10 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-40">
+            className="h-10 w-10 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-40 neon-glow-purple hover-neon-lift">
             <Send className="w-4 h-4" />
           </Button>
         )}
@@ -662,28 +662,28 @@ export default function ChatPanel({
     }
 
     return (
-      <div className="absolute inset-0 z-20 flex flex-col bg-background/97 backdrop-blur-xl animate-slide-up">
+      <div className="absolute inset-0 z-20 flex flex-col cyber-glass-strong backdrop-blur-xl animate-slide-up scanlines">
         {showHistory ? historyPanel : (
           <>
-            <div className="flex items-center justify-between px-4 border-b border-border/50"
+            <div className="flex items-center justify-between px-4 border-b border-neon-purple corner-accent"
               style={{ paddingTop: 'max(0.875rem, env(safe-area-inset-top))', paddingBottom: '0.875rem' }}>
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center">
+                <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center neon-glow-purple">
                   <Bot className="w-4 h-4 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-semibold text-foreground leading-none">Chat</h2>
+                  <h2 className="text-sm font-semibold text-foreground leading-none text-neon-purple">Chat</h2>
                   <p className="text-[10px] text-muted-foreground mt-0.5">{messages.length} pesan</p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => setShowHistory(true)}><History className="w-4 h-4" /></Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={startNewConversation}><Plus className="w-4 h-4" /></Button>
-                <Button variant="ghost" size="icon" onClick={onToggle} className="h-8 w-8 text-muted-foreground touch-manipulation"><X className="w-4 h-4" /></Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover-neon-glow" onClick={() => setShowHistory(true)}><History className="w-4 h-4" /></Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover-neon-glow" onClick={startNewConversation}><Plus className="w-4 h-4" /></Button>
+                <Button variant="ghost" size="icon" onClick={onToggle} className="h-8 w-8 text-muted-foreground touch-manipulation hover-neon-glow"><X className="w-4 h-4" /></Button>
               </div>
             </div>
             <ScrollArea className="flex-1 py-4 px-3" ref={scrollRef}>{messageList}</ScrollArea>
-            <div className="px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-border/50 bg-background/80">{inputBar}</div>
+            <div className="px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-neon-purple cyber-glass">{inputBar}</div>
           </>
         )}
       </div>
@@ -692,43 +692,43 @@ export default function ChatPanel({
 
   // ── Desktop ───────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full bg-card/70 backdrop-blur-xl border-l border-border/50">
+    <div className="flex flex-col h-full cyber-glass-strong backdrop-blur-xl border-l border-neon-purple-bright scanlines">
       {showHistory ? historyPanel : (
         <>
-          <div className="px-3.5 py-3 border-b border-border/50 flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+          <div className="px-3.5 py-3 border-b border-neon-purple flex items-center gap-2 corner-accent">
+            <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0 neon-glow-purple">
               <Bot className="w-4 h-4 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-sm font-semibold text-foreground leading-none truncate">
+              <h2 className="text-sm font-semibold text-foreground leading-none truncate text-neon-purple">
                 {conversations.find(c => c.id === activeId)?.title ?? 'Chat'}
               </h2>
               <p className="text-[10px] text-muted-foreground mt-0.5">{messages.length} pesan</p>
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={() => setShowHistory(true)} title="Riwayat">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground hover-neon-glow" onClick={() => setShowHistory(true)} title="Riwayat">
                 <History className="w-3.5 h-3.5" />
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={startNewConversation} title="Percakapan baru">
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground hover-neon-glow" onClick={startNewConversation} title="Percakapan baru">
                 <Plus className="w-3.5 h-3.5" />
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground hover-neon-glow">
                     <MoreVertical className="w-3.5 h-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48 bg-card/95 backdrop-blur-xl border-border/60">
-                  <DropdownMenuItem onClick={handleExport} className="text-xs gap-2">
+                <DropdownMenuContent align="end" className="w-48 cyber-glass-strong backdrop-blur-xl border-neon-purple-bright">
+                  <DropdownMenuItem onClick={handleExport} className="text-xs gap-2 hover-neon-glow">
                     <Download className="w-3.5 h-3.5" /> Export JSON
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleImport} className="text-xs gap-2">
+                  <DropdownMenuItem onClick={handleImport} className="text-xs gap-2 hover-neon-glow">
                     <Upload className="w-3.5 h-3.5" /> Import JSON
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={handleRegenerate}
                     disabled={isLoading || messages.length < 2}
-                    className="text-xs gap-2"
+                    className="text-xs gap-2 hover-neon-glow"
                   >
                     <RefreshCw className="w-3.5 h-3.5" /> Regenerasi
                   </DropdownMenuItem>
@@ -746,7 +746,7 @@ export default function ChatPanel({
 
           <ScrollArea className="flex-1 py-4 px-3 scrollbar-thin" ref={scrollRef}>{messageList}</ScrollArea>
 
-          <div className="px-3 py-3 border-t border-border/50 bg-background/40">
+          <div className="px-3 py-3 border-t border-neon-purple cyber-glass">
             {inputBar}
             <p className="text-[10px] text-muted-foreground/40 text-center mt-1.5">Enter kirim · Shift+Enter baris baru</p>
           </div>
@@ -771,15 +771,15 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: ChatMessage })
   return (
     <div className={`group flex items-end gap-2 animate-msg-in ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center mb-0.5 ${
-        isUser ? 'bg-primary/20 border border-primary/30' : 'bg-secondary border border-border/60'
+        isUser ? 'bg-primary/20 border border-neon-purple-bright neon-glow-purple' : 'bg-secondary border border-neon-purple cyber-glass'
       }`}>
         {isUser ? <User className="w-3 h-3 text-primary" /> : <Bot className="w-3 h-3 text-muted-foreground" />}
       </div>
       <div className="relative max-w-[82%]">
         <div className={`rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
           isUser
-            ? 'bg-primary text-primary-foreground rounded-br-sm'
-            : 'bg-secondary/80 text-secondary-foreground border border-border/40 rounded-bl-sm'
+            ? 'bg-primary text-primary-foreground rounded-br-sm neon-glow-purple border border-neon-purple-bright'
+            : 'cyber-glass text-secondary-foreground border border-neon-purple rounded-bl-sm'
         }`}>
           {msg.role === 'assistant' ? (
             <div className="prose prose-sm prose-invert max-w-none [&>p]:mb-1.5 [&>p:last-child]:mb-0 [&>ul]:mt-1 [&>ol]:mt-1">
@@ -792,7 +792,7 @@ const MessageBubble = memo(function MessageBubble({ msg }: { msg: ChatMessage })
         {/* Copy button — appears on hover */}
         <button
           onClick={handleCopy}
-          className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-muted-foreground/60 hover:text-muted-foreground flex items-center gap-1`}
+          className={`absolute -bottom-5 ${isUser ? 'right-0' : 'left-0'} opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-muted-foreground/60 hover:text-primary flex items-center gap-1`}
         >
           {copied ? '✓ Disalin' : 'Salin'}
         </button>
@@ -808,13 +808,13 @@ function LoadingIndicators({ isLoading, isTTSLoading, messages }: {
     <>
       {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
         <div className="flex items-end gap-2 animate-msg-in">
-          <div className="w-6 h-6 rounded-full bg-secondary border border-border/60 flex items-center justify-center shrink-0">
+          <div className="w-6 h-6 rounded-full cyber-glass border border-neon-purple flex items-center justify-center shrink-0 pulse-neon">
             <Bot className="w-3 h-3 text-muted-foreground" />
           </div>
-          <div className="bg-secondary/80 border border-border/40 rounded-2xl rounded-bl-sm px-4 py-3">
+          <div className="cyber-glass border border-neon-purple rounded-2xl rounded-bl-sm px-4 py-3 loading-bar">
             <div className="flex gap-1.5 items-center">
               {[0, 150, 300].map((delay) => (
-                <span key={delay} className="w-1.5 h-1.5 bg-muted-foreground/60 rounded-full animate-bounce" style={{ animationDelay: `${delay}ms` }} />
+                <span key={delay} className="w-1.5 h-1.5 bg-primary/80 rounded-full animate-bounce neon-glow-purple" style={{ animationDelay: `${delay}ms` }} />
               ))}
             </div>
           </div>
@@ -822,11 +822,11 @@ function LoadingIndicators({ isLoading, isTTSLoading, messages }: {
       )}
       {isTTSLoading && (
         <div className="flex items-end gap-2 animate-msg-in">
-          <div className="w-6 h-6 rounded-full bg-secondary border border-border/60 flex items-center justify-center shrink-0">
+          <div className="w-6 h-6 rounded-full cyber-glass border border-neon-purple flex items-center justify-center shrink-0 pulse-neon">
             <Bot className="w-3 h-3 text-muted-foreground" />
           </div>
-          <div className="bg-secondary/60 border border-border/40 rounded-2xl rounded-bl-sm px-3.5 py-2 flex items-center gap-2">
-            <Volume2 className="w-3.5 h-3.5 text-primary animate-pulse" />
+          <div className="cyber-glass border border-neon-purple rounded-2xl rounded-bl-sm px-3.5 py-2 flex items-center gap-2">
+            <Volume2 className="w-3.5 h-3.5 text-primary animate-pulse neon-glow-purple" />
             <span className="text-xs text-muted-foreground">Generating speech…</span>
           </div>
         </div>

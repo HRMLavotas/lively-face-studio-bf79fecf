@@ -4,47 +4,54 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Cyberpunk Neon Theme */
+@import './cyberpunk-theme.css';
+
 @layer base {
   :root {
-    --background: 222 24% 5%;
-    --foreground: 210 18% 93%;
-    --card: 222 22% 9%;
-    --card-foreground: 210 18% 93%;
-    --popover: 222 22% 9%;
-    --popover-foreground: 210 18% 93%;
-    --primary: 174 72% 48%;
-    --primary-foreground: 222 24% 5%;
-    --secondary: 222 18% 14%;
-    --secondary-foreground: 210 18% 82%;
-    --muted: 222 16% 12%;
-    --muted-foreground: 215 12% 52%;
-    --accent: 258 62% 62%;
-    --accent-foreground: 210 18% 96%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 222 18% 16%;
-    --input: 222 18% 16%;
-    --ring: 174 72% 48%;
+    /* Cyberpunk Neon Colors */
+    --background: 240 10% 3%;        /* #06060a - Deep dark blue-black */
+    --foreground: 280 100% 95%;      /* Bright neon white-purple */
+    --card: 270 50% 8% / 0.6;        /* Dark purple card with transparency */
+    --card-foreground: 280 100% 95%;
+    --popover: 270 50% 6%;
+    --popover-foreground: 280 100% 95%;
+    --primary: 270 100% 65%;         /* Neon purple #a855f7 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 280 100% 50% / 0.15;
+    --secondary-foreground: 280 100% 95%;
+    --muted: 270 50% 10% / 0.5;
+    --muted-foreground: 280 60% 70%;
+    --accent: 290 100% 60%;          /* Bright magenta */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 270 100% 60% / 0.15;   /* Neon purple border */
+    --input: 270 100% 60% / 0.20;
+    --ring: 270 100% 65%;
     --radius: 0.75rem;
 
-    --glow-primary: 174 72% 48%;
-    --glow-accent: 258 62% 62%;
-
-    --sidebar-background: 222 22% 7%;
-    --sidebar-foreground: 210 18% 82%;
-    --sidebar-primary: 174 72% 48%;
-    --sidebar-primary-foreground: 222 24% 5%;
-    --sidebar-accent: 222 16% 12%;
-    --sidebar-accent-foreground: 210 18% 82%;
-    --sidebar-border: 222 18% 16%;
-    --sidebar-ring: 174 72% 48%;
+    /* Neon glow colors */
+    --glow-primary: 270 100% 65%;    /* Purple neon */
+    --glow-accent: 290 100% 60%;     /* Magenta neon */
+    --glow-cyan: 180 100% 50%;       /* Cyan accent */
+    
+    /* Sidebar */
+    --sidebar-background: 240 10% 4%;
+    --sidebar-foreground: 280 100% 90%;
+    --sidebar-primary: 270 100% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 270 50% 10% / 0.5;
+    --sidebar-accent-foreground: 280 100% 90%;
+    --sidebar-border: 270 100% 60% / 0.15;
+    --sidebar-ring: 270 100% 65%;
 
     font-family: 'Inter', system-ui, sans-serif;
   }
 
   .dark {
-    --background: 222 24% 5%;
-    --foreground: 210 18% 93%;
+    --background: 240 10% 3%;
+    --foreground: 280 100% 95%;
   }
 }
 
@@ -62,11 +69,21 @@
 }
 
 @layer utilities {
+  /* Glow effects - violet theme */
   .glow-primary {
     box-shadow: 0 0 16px hsl(var(--glow-primary) / 0.35), 0 0 48px hsl(var(--glow-primary) / 0.12);
   }
   .glow-accent {
     box-shadow: 0 0 16px hsl(var(--glow-accent) / 0.35), 0 0 48px hsl(var(--glow-accent) / 0.12);
+  }
+  .glow-violet-sm {
+    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.15);
+  }
+  .glow-violet-md {
+    box-shadow: 0 8px 30px rgba(139, 92, 246, 0.25);
+  }
+  .glow-violet-lg {
+    box-shadow: 0 12px 40px rgba(139, 92, 246, 0.35);
   }
   .text-glow {
     text-shadow: 0 0 12px hsl(var(--glow-primary) / 0.45);
@@ -81,12 +98,32 @@
     background-clip: padding-box;
   }
 
-  /* Glass panel */
+  /* Glass panel - landing page style */
   .glass {
-    background: hsl(var(--card) / 0.75);
-    backdrop-filter: blur(16px) saturate(1.4);
-    -webkit-backdrop-filter: blur(16px) saturate(1.4);
-    border: 1px solid hsl(var(--border) / 0.6);
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(32px) saturate(1.5);
+    -webkit-backdrop-filter: blur(32px) saturate(1.5);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+  }
+
+  /* Gradient backgrounds */
+  .gradient-bg-primary {
+    background: linear-gradient(160deg, #131228 0%, #0c0b1a 100%);
+  }
+  
+  .gradient-bg-secondary {
+    background: linear-gradient(180deg, #07070f 0%, #0d0a1f 50%, #07070f 100%);
+  }
+  
+  .gradient-bg-tertiary {
+    background: linear-gradient(180deg, #07070f 0%, #0b0918 50%, #07070f 100%);
   }
 
   /* Subtle inner glow on focus */
@@ -97,7 +134,7 @@
   /* Scrollbar styling */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--border)) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
     width: 4px;
@@ -106,8 +143,11 @@
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: hsl(var(--border));
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 99px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.15);
   }
 
   /* Mobile: prevent overscroll bounce */
@@ -166,5 +206,13 @@
   }
   .animate-slide-up {
     animation: slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
+  
+  /* Hover scale effect */
+  .hover-scale {
+    transition: transform 0.3s ease;
+  }
+  .hover-scale:hover {
+    transform: scale(1.02);
   }
 }

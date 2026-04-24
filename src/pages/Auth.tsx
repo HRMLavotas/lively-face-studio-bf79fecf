@@ -68,25 +68,26 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
-      {/* Background glow */}
+    <div className="min-h-screen bg-background cyber-grid-animated flex items-center justify-center p-4 relative scanlines">
+      {/* Background neon glow */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] rounded-full bg-primary/5 blur-[120px]" />
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] rounded-full bg-primary/10 blur-[120px] neon-glow-purple" />
+        <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] rounded-full bg-accent/8 blur-[100px] neon-glow-magenta" />
       </div>
 
-      <Link to="/" className="absolute top-4 left-4">
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+      <Link to="/" className="absolute top-4 left-4 z-10">
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground hover-neon-glow cyber-glass">
           <ArrowLeft className="w-4 h-4" />
         </Button>
       </Link>
 
-      <div className="relative w-full max-w-sm">
+      <div className="relative w-full max-w-sm z-10">
         {/* Logo */}
         <div className="text-center mb-7">
-          <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center mx-auto mb-3">
+          <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-neon-purple-bright flex items-center justify-center mx-auto mb-3 neon-glow-purple pulse-neon">
             <Bot className="w-6 h-6 text-primary" />
           </div>
-          <h1 className="text-xl font-semibold text-foreground tracking-tight text-glow">
+          <h1 className="text-xl font-semibold text-foreground tracking-tight text-neon-purple">
             VRM Assistant
           </h1>
           <p className="text-sm text-muted-foreground mt-1.5">
@@ -95,14 +96,14 @@ export default function Auth() {
         </div>
 
         {/* Card */}
-        <div className="bg-card/80 backdrop-blur-xl border border-border/50 rounded-2xl p-5 space-y-4 shadow-xl shadow-black/20">
+        <div className="cyber-glass-strong backdrop-blur-xl border border-neon-purple-bright rounded-2xl p-5 space-y-4 shadow-xl shadow-primary/10 corner-accent">
           {/* Google */}
           <Button
             type="button"
             variant="outline"
             onClick={handleGoogle}
             disabled={submitting}
-            className="w-full gap-2.5 h-10 text-sm border-border/60 bg-secondary/30 hover:bg-secondary/60"
+            className="w-full gap-2.5 h-10 text-sm border-neon-purple cyber-glass hover-neon-glow transition-all"
           >
             <GoogleIcon /> Continue with Google
           </Button>
@@ -110,30 +111,30 @@ export default function Auth() {
           {/* Divider */}
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-border/40" />
+              <span className="w-full border-t border-neon-purple" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-card px-2.5 text-muted-foreground/60">atau</span>
+              <span className="cyber-glass px-2.5 text-muted-foreground/60">atau</span>
             </div>
           </div>
 
           {/* Email/password tabs */}
           <Tabs value={tab} onValueChange={(v) => setTab(v as 'signin' | 'signup')}>
-            <TabsList className="grid w-full grid-cols-2 h-9 bg-secondary/50">
-              <TabsTrigger value="signin" className="text-xs">Masuk</TabsTrigger>
-              <TabsTrigger value="signup" className="text-xs">Daftar</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 h-9 cyber-glass border border-neon-purple">
+              <TabsTrigger value="signin" className="text-xs data-[state=active]:neon-glow-purple data-[state=active]:border-neon-purple-bright">Masuk</TabsTrigger>
+              <TabsTrigger value="signup" className="text-xs data-[state=active]:neon-glow-purple data-[state=active]:border-neon-purple-bright">Daftar</TabsTrigger>
             </TabsList>
 
             <TabsContent value="signin" className="mt-4 space-y-3">
               <EmailPasswordFields email={email} password={password} setEmail={setEmail} setPassword={setPassword} />
-              <Button onClick={() => handleEmail('signin')} disabled={submitting} className="w-full h-10 text-sm">
+              <Button onClick={() => handleEmail('signin')} disabled={submitting} className="w-full h-10 text-sm neon-glow-purple hover-neon-lift">
                 {submitting ? 'Memproses…' : 'Masuk'}
               </Button>
             </TabsContent>
 
             <TabsContent value="signup" className="mt-4 space-y-3">
               <EmailPasswordFields email={email} password={password} setEmail={setEmail} setPassword={setPassword} />
-              <Button onClick={() => handleEmail('signup')} disabled={submitting} className="w-full h-10 text-sm">
+              <Button onClick={() => handleEmail('signup')} disabled={submitting} className="w-full h-10 text-sm neon-glow-purple hover-neon-lift">
                 {submitting ? 'Memproses…' : 'Buat Akun'}
               </Button>
               <p className="text-[11px] text-muted-foreground/60 text-center leading-relaxed">
@@ -163,7 +164,7 @@ function EmailPasswordFields({
             id="email" type="email" value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            className="pl-9 h-10 bg-secondary/40 border-border/50 text-sm focus:border-primary/50"
+            className="pl-9 h-10 cyber-glass border-neon-purple text-sm focus:border-neon-purple-bright focus:neon-glow-purple transition-all"
             autoComplete="email"
           />
         </div>
@@ -176,7 +177,7 @@ function EmailPasswordFields({
             id="password" type="password" value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
-            className="pl-9 h-10 bg-secondary/40 border-border/50 text-sm focus:border-primary/50"
+            className="pl-9 h-10 cyber-glass border-neon-purple text-sm focus:border-neon-purple-bright focus:neon-glow-purple transition-all"
             autoComplete="current-password"
           />
         </div>

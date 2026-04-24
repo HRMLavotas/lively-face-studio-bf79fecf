@@ -71,25 +71,25 @@ export default function Profile() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      <div className="min-h-screen bg-background cyber-grid-animated scanlines flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin neon-glow-purple" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background cyber-grid-animated scanlines">
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-xl">
+      <div className="sticky top-0 z-10 border-b border-neon-purple cyber-glass-strong backdrop-blur-xl">
         <div className="max-w-xl mx-auto px-4 py-3.5 flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/app')} className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/app')} className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 hover-neon-glow">
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-secondary border border-border/60 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-secondary border border-neon-purple flex items-center justify-center neon-glow-purple">
               <User className="w-3.5 h-3.5 text-muted-foreground" />
             </div>
-            <h1 className="text-base font-semibold text-foreground tracking-tight">Profil</h1>
+            <h1 className="text-base font-semibold text-foreground tracking-tight text-neon-purple">Profil</h1>
           </div>
         </div>
       </div>
@@ -98,28 +98,28 @@ export default function Profile() {
         {/* Avatar section */}
         <div className="flex flex-col items-center gap-4 py-2">
           <div className="relative group">
-            <Avatar className="h-24 w-24 ring-2 ring-border/60 ring-offset-2 ring-offset-background">
+            <Avatar className="h-24 w-24 ring-2 ring-neon-purple-bright ring-offset-2 ring-offset-background neon-glow-purple">
               <AvatarImage src={avatarUrl ?? undefined} alt={displayName} />
               <AvatarFallback className="text-3xl font-semibold bg-primary/10 text-primary">{initial}</AvatarFallback>
             </Avatar>
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+              className="absolute inset-0 rounded-full cyber-glass-strong opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center border border-neon-purple-bright"
             >
               <Camera className="w-5 h-5 text-white" />
             </button>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} className="hidden" />
           </div>
           <div className="text-center">
-            <p className="font-semibold text-foreground">{displayName || 'Pengguna'}</p>
+            <p className="font-semibold text-foreground text-neon-purple">{displayName || 'Pengguna'}</p>
             <p className="text-xs text-muted-foreground mt-0.5">{user?.email}</p>
           </div>
         </div>
 
         {/* Role badge */}
-        <div className={`rounded-xl border p-4 flex items-center gap-3 ${isPro ? 'border-primary/30 bg-primary/5' : 'border-border/50 bg-card/50'}`}>
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isPro ? 'bg-primary/15 border border-primary/25' : 'bg-secondary border border-border/60'}`}>
+        <div className={`rounded-xl border p-4 flex items-center gap-3 corner-accent ${isPro ? 'border-neon-purple-bright cyber-glass neon-glow-purple' : 'border-neon-purple cyber-glass'}`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isPro ? 'bg-primary/15 border border-neon-purple-bright neon-glow-purple' : 'bg-secondary border border-neon-purple'}`}>
             {isPro ? <Crown className="w-4.5 h-4.5 text-primary" /> : <User className="w-4 h-4 text-muted-foreground" />}
           </div>
           <div className="flex-1 min-w-0">
@@ -129,7 +129,7 @@ export default function Profile() {
             </p>
           </div>
           {!isPro && (
-            <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/10">
+            <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs gap-1.5 border-neon-purple-bright text-primary hover-neon-glow">
               <Sparkles className="w-3 h-3" /> Upgrade
             </Button>
           )}
@@ -139,7 +139,7 @@ export default function Profile() {
         <div className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="email" className="text-xs text-muted-foreground">Email</Label>
-            <Input value={user?.email ?? ''} disabled className="h-10 bg-secondary/30 border-border/40 text-muted-foreground text-sm" />
+            <Input value={user?.email ?? ''} disabled className="h-10 cyber-glass border-neon-purple text-muted-foreground text-sm" />
           </div>
 
           <div className="space-y-1.5">
@@ -149,20 +149,20 @@ export default function Profile() {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder="Nama kamu"
-              className="h-10 bg-secondary/40 border-border/50 text-sm focus:border-primary/50"
+              className="h-10 cyber-glass border-neon-purple text-sm focus:border-neon-purple-bright focus:neon-glow-purple transition-all"
             />
           </div>
         </div>
 
         {/* Actions */}
         <div className="flex gap-2.5 pt-2">
-          <Button onClick={handleSave} disabled={saving} className="flex-1 h-10">
+          <Button onClick={handleSave} disabled={saving} className="flex-1 h-10 neon-glow-purple hover-neon-lift">
             {saving ? 'Menyimpan…' : 'Simpan Perubahan'}
           </Button>
           <Button
             variant="outline"
             onClick={async () => { await signOut(); navigate('/'); }}
-            className="h-10 gap-2 border-border/60 text-muted-foreground hover:text-destructive hover:border-destructive/40"
+            className="h-10 gap-2 border-neon-purple text-muted-foreground hover:text-destructive hover:border-destructive/40 hover-neon-glow"
           >
             <LogOut className="w-4 h-4" /> Keluar
           </Button>

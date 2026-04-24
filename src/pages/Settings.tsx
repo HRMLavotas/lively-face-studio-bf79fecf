@@ -61,30 +61,30 @@ export default function Settings() {
   }, [models]);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background cyber-grid-animated scanlines">
       {/* Sticky header */}
-      <div className="sticky top-0 z-10 border-b border-border/40 bg-background/90 backdrop-blur-xl">
+      <div className="sticky top-0 z-10 border-b border-neon-purple cyber-glass-strong backdrop-blur-xl">
         <div className="max-w-2xl mx-auto px-4 py-3.5 flex items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => navigate('/app')}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground shrink-0 hover-neon-glow"
           >
             <ArrowLeft className="w-4 h-4" />
           </Button>
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-secondary border border-border/60 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-secondary border border-neon-purple flex items-center justify-center neon-glow-purple">
               <SettingsIcon className="w-3.5 h-3.5 text-muted-foreground" />
             </div>
-            <h1 className="text-base font-semibold text-foreground tracking-tight">Pengaturan</h1>
+            <h1 className="text-base font-semibold text-foreground tracking-tight text-neon-purple">Pengaturan</h1>
           </div>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-8 space-y-10">
         <ModelManager models={models} onRefresh={fetchModels} />
-        <div className="border-t border-border/40" />
+        <div className="border-t border-neon-purple" />
         <TTSSettings
           isPro={isPro}
           provider={provider}
@@ -94,7 +94,7 @@ export default function Settings() {
           voices={voices}
           onVoicesRefresh={fetchVoices}
         />
-        <div className="border-t border-border/40" />
+        <div className="border-t border-neon-purple" />
         <LanguagePreference />
       </div>
     </div>
