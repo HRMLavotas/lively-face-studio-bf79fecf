@@ -5,14 +5,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRM, VRMUtils } from '@pixiv/three-vrm';
 import {
   updateBlink,
-  updateMicroExpressions,
+  setBlinkSpeakingMode,
   updateLipSync,
   resetMouthExpressions,
-  setTargetMood,
   updateIdleMicroGestures,
-  updateIdleSmile,
 } from '@/lib/vrm-animations';
-import { detectMood } from '@/lib/sentiment';
 import { createMixer, playVRMA } from '@/lib/vrma-player';
 import { initLookAt, updateLookAt, setLookAtEnabled } from '@/lib/vrm-lookat';
 import { initSpringBones, updateSpringBones } from '@/lib/vrm-spring';
@@ -35,6 +32,12 @@ export interface VrmViewerHandle {
   setCameraPreset: (preset: CameraPreset) => void;
   setCameraFree: (enabled: boolean) => void;
   isCameraFree: () => boolean;
+  /** Apply a map of blendshape key → weight (0–1) directly to the loaded VRM. */
+  applyBlendshape: (weights: Record<string, number>) => void;
+  /** Reset all expression weights to 0. */
+  clearBlendshape: () => void;
+  /** Enable/disable automatic mood expressions (for manual blendshape preview). */
+  setManualBlendshapeMode: (enabled: boolean) => void;
 }
 
 interface VrmViewerProps {
@@ -63,6 +66,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const frameCountRef = useRef(0);
   const isVisibleRef = useRef(true);
   const isMobileRef = useRef(false);
+  const manualBlendshapeRef = useRef(false); // true = skip auto mood expressions
 
   // Camera
   const orbitControlsRef = useRef<OrbitControls | null>(null);
@@ -74,6 +78,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const [error, setError] = useState<string | null>(null);
 
   isSpeakingRef.current = isSpeaking;
+  
+  // Notify blink system when speaking state changes
+  useEffect(() => {
+    setBlinkSpeakingMode(isSpeaking);
+  }, [isSpeaking]);
 
   // ── Animation system ──────────────────────────────────────────────────────
   const {
@@ -161,17 +170,17 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
       if (vrm) {
         resetMouthExpressions(vrm);
-        setTargetMood('neutral');
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSpeaking, restartIdleLoop, playNextTalking]);
 
   useEffect(() => {
-    if (isSpeaking && currentMessage) {
-      setTargetMood(detectMood(currentMessage));
+    if (!isSpeaking && vrmRef.current) {
+      resetMouthExpressions(vrmRef.current);
     }
-  }, [isSpeaking, currentMessage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpeaking]);
 
   // ── Camera animation ──────────────────────────────────────────────────────
   const animateCameraToPreset = useCallback((preset: CameraPreset) => {
@@ -233,6 +242,37 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     isCameraFree: () => cameraFreeRef.current,
     playVrmaUrl,
     stopVrma: stopVrmaImperative,
+    applyBlendshape: (weights: Record<string, number>) => {
+      const vrm = vrmRef.current;
+      if (!vrm?.expressionManager) return;
+      manualBlendshapeRef.current = true; // pause auto mood
+      for (const [key, value] of Object.entries(weights)) {
+        const v = Math.max(0, Math.min(1, value));
+        try { vrm.expressionManager.setValue(key, v); } catch (_) { /* ok */ }
+        const camel = key.charAt(0).toLowerCase() + key.slice(1);
+        if (camel !== key) { try { vrm.expressionManager.setValue(camel, v); } catch (_) { /* ok */ } }
+      }
+    },
+    clearBlendshape: () => {
+      const vrm = vrmRef.current;
+      if (!vrm?.expressionManager) return;
+      manualBlendshapeRef.current = false; // resume auto mood
+      const allKeys = [
+        'EyeBlinkLeft','EyeBlinkRight','EyeWideLeft','EyeWideRight','EyeSquintLeft','EyeSquintRight',
+        'BrowDownLeft','BrowDownRight','BrowInnerUp','BrowOuterUpLeft','BrowOuterUpRight',
+        'CheekPuff','CheekSquintLeft','CheekSquintRight','NoseSneerLeft','NoseSneerRight',
+        'JawOpen','JawLeft','JawRight','MouthSmileLeft','MouthSmileRight','MouthFrownLeft','MouthFrownRight',
+        'MouthDimpleLeft','MouthDimpleRight','MouthStretchLeft','MouthStretchRight',
+        'MouthRollLower','MouthRollUpper','MouthShrugLower','MouthShrugUpper',
+        'MouthPressLeft','MouthPressRight','MouthLowerDownLeft','MouthLowerDownRight',
+        'MouthUpperUpLeft','MouthUpperUpRight','MouthClose','MouthFunnel','MouthPucker','MouthLeft','MouthRight',
+        'happy','sad','relaxed','surprised','angry','blinkLeft','blinkRight','aa','ih','ou','ee','oh',
+      ];
+      for (const k of allKeys) { try { vrm.expressionManager.setValue(k, 0); } catch (_) { /* ok */ } }
+    },
+    setManualBlendshapeMode: (enabled: boolean) => {
+      manualBlendshapeRef.current = enabled;
+    },
   }), [animateCameraToPreset, playVrmaUrl, stopVrmaImperative]);
 
   // Keep getAudioLevel stable across renders
@@ -259,34 +299,21 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     frameCountRef.current++;
 
     if (vrm) {
-      // On mobile: run expressions every other frame to save CPU
-      const runExpressions = !isMobileRef.current || frameCountRef.current % 3 === 0;
-
       // 1. Update mixer first — VRMA clips drive bones
       mixerRef.current?.update(delta);
 
-      // 2. Expression overrides (run after mixer so they win)
-      if (runExpressions) {
-        updateMicroExpressions(elapsedTime, vrm, delta);
-      }
-
-      // 3. Procedural micro-gestures (skip when talking/gesture active)
+      // 2. Procedural micro-gestures — body breathing only (no expression override)
       const isManualOrTalking = !!vrmaActionRef.current || isTalkingPlayingRef.current;
-      if (!isManualOrTalking && (!isMobileRef.current || frameCountRef.current % 2 === 0)) {
+      if (!isManualOrTalking) {
         updateIdleMicroGestures(elapsedTime, vrm, activeDrivenBonesRef.current);
       }
-      if (!isMobileRef.current || frameCountRef.current % 2 === 0) {
-        updateIdleSmile(delta, vrm, isManualOrTalking);
-      }
 
-      // 4. Look-at ALWAYS runs after mixer — passes empty set so it always
-      //    overrides neck/head even when VRMA clips drive those bones.
-      //    This is intentional: look-at should always win over animation.
-      if (cameraRef.current && !cameraFreeRef.current) {
+      // 3. Look-at — desktop only (no mouse on mobile)
+      if (cameraRef.current && !cameraFreeRef.current && !isMobileRef.current) {
         updateLookAt(delta, vrm, cameraRef.current, new Set());
       }
 
-      // 5. Lip sync
+      // 4. Lip sync
       if (isSpeakingRef.current) {
         vrm.expressionManager?.setValue('aa', 0);
         const level = isWebSpeechActiveRef.current
@@ -299,10 +326,9 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       vrm.update(delta);
 
       // 6. Spring bones — secondary motion (hair, accessories, etc.)
-      //    Runs after vrm.update() so it adds on top of the base pose
       updateSpringBones(delta, vrm);
 
-      // 7. Blink MUST run after vrm.update() every frame (no throttle)
+      // 7. Blink — runs after vrm.update() every frame
       updateBlink(delta, vrm);
     }
 
@@ -465,8 +491,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     frameCountRef.current = 0;
     rafRef.current = requestAnimationFrame(animate);
 
-    // Init look-at mouse tracking
-    const cleanupLookAt = initLookAt(container);
+    // Init look-at mouse tracking — desktop only (no mouse on mobile)
+    const cleanupLookAt = isMobile ? () => {} : initLookAt(container);
 
     const onResize = () => {
       if (!container) return;
@@ -489,6 +515,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       renderer.setSize(container.clientWidth, container.clientHeight);
       if (wasMobile !== nowMobile) {
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, nowMobile ? 1.5 : 2));
+        // Disable look-at on mobile, re-enable on desktop
+        setLookAtEnabled(!nowMobile);
       }
       orbitControlsRef.current?.handleResize?.();
     };

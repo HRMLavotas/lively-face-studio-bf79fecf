@@ -5,33 +5,97 @@ import type { MoodName } from './sentiment';
 // ============================================
 // 1. AUTO RANDOM BLINKING
 // ============================================
+//
+// Referensi biomechanics:
+//   - Rata-rata 12-17 kedip/menit saat istirahat, turun saat fokus/bicara
+//   - Fase tutup: ~150ms, fase buka: ~200-250ms (asimetris)
+//   - Partial blink: ~15% kejadian, mata hanya menutup 50-80%
+//   - Kedip ganda: kedip ke-2 lebih cepat (reflex facilitation)
+//   - Interval mengikuti distribusi gamma (bukan uniform)
+//   - Saat TTS aktif: interval lebih panjang (manusia jarang kedip saat bicara)
 
-let blinkTimer = 0;
-let nextBlinkIn = randomBlinkInterval();
+const BLINK_CLOSE_FAST   = 0.10; // spontaneous close
+const BLINK_CLOSE_SLOW   = 0.16; // tired/relaxed close
+const BLINK_HOLD_MIN     = 0.06;
+const BLINK_HOLD_MAX     = 0.14;
+const BLINK_OPEN_NORMAL  = 0.20;
+const BLINK_OPEN_SLOW    = 0.28; // overshoot recovery
+const INTER_BLINK_GAP    = 0.18; // jeda antar kedip dalam burst (lebih cepat dari sebelumnya)
 
-// Blink state machine — driven purely by delta, no gsap dependency
-type BlinkPhase = 'idle' | 'closing' | 'closed' | 'opening';
+type BlinkPhase = 'idle' | 'closing' | 'closed' | 'opening' | 'inter';
+
 let blinkPhase: BlinkPhase = 'idle';
 let blinkPhaseTimer = 0;
+let blinkTimer = 0;
+let nextBlinkIn = _scheduleNextBlink(false);
+let blinksRemaining = 0;
 
-const BLINK_CLOSE_DURATION = 0.15; // detik menutup mata
-const BLINK_HOLD_DURATION  = 0.10; // detik mata tertutup penuh
-const BLINK_OPEN_DURATION  = 0.20; // detik membuka mata (lebih lambat = lebih natural)
+// Parameter per-kedip yang di-randomize saat burst dimulai
+let _closeSpeed  = BLINK_CLOSE_FAST;
+let _openSpeed   = BLINK_OPEN_NORMAL;
+let _holdTime    = BLINK_HOLD_MIN;
+let _peakValue   = 1.0; // 1.0 = full blink, <1 = partial blink
+let _isSpeakingBlink = false; // flag dari luar
 
-// Expose untuk guard di applyPS / applyStd
+// Gamma-like distribution: lebih natural dari uniform
+// Menjumlahkan beberapa random → distribusi condong ke tengah
+function _gamma2(min: number, range: number): number {
+  return min + (Math.random() + Math.random()) * 0.5 * range;
+}
+
+function _scheduleNextBlink(speaking: boolean): number {
+  if (speaking) {
+    // Saat bicara: jarang kedip, 5-12 detik
+    return _gamma2(5, 7);
+  }
+  // 5% jeda panjang (fokus/melamun)
+  if (Math.random() < 0.05) return _gamma2(10, 10);
+  // Normal: distribusi gamma-like 2-8 detik
+  return _gamma2(2, 6);
+}
+
+function _scheduleBurst(): number {
+  const r = Math.random();
+  if (r < 0.72) return 1;  // 72% tunggal
+  if (r < 0.92) return 2;  // 20% ganda
+  return 3;                 //  8% triple
+}
+
+// Randomize parameter fisik untuk satu kedip
+function _randomizeBlinkParams(isSecondInBurst: boolean): void {
+  // Partial blink: 15% kemungkinan
+  _peakValue = Math.random() < 0.15
+    ? 0.5 + Math.random() * 0.3  // 50-80% tutup
+    : 0.92 + Math.random() * 0.08; // 92-100% tutup (hampir selalu penuh)
+
+  // Kedip ke-2 dalam burst lebih cepat (reflex facilitation)
+  if (isSecondInBurst) {
+    _closeSpeed = BLINK_CLOSE_FAST * 0.8;
+    _openSpeed  = BLINK_OPEN_NORMAL * 0.85;
+    _holdTime   = BLINK_HOLD_MIN;
+  } else {
+    // Variasi normal: kadang lebih lambat (lelah/rileks)
+    const tired = Math.random() < 0.2;
+    _closeSpeed = tired ? BLINK_CLOSE_SLOW : _gamma2(BLINK_CLOSE_FAST, BLINK_CLOSE_SLOW - BLINK_CLOSE_FAST);
+    _openSpeed  = tired ? BLINK_OPEN_SLOW  : _gamma2(BLINK_OPEN_NORMAL, BLINK_OPEN_SLOW - BLINK_OPEN_NORMAL);
+    _holdTime   = _gamma2(BLINK_HOLD_MIN, BLINK_HOLD_MAX - BLINK_HOLD_MIN);
+  }
+}
+
 export function getIsBlinking(): boolean {
   return blinkPhase !== 'idle';
 }
 
-function randomBlinkInterval(): number {
-  return 4 + Math.random() * 5; // 4 - 9 detik antar kedip
+/** Dipanggil dari VrmViewer saat isSpeaking berubah */
+export function setBlinkSpeakingMode(speaking: boolean): void {
+  _isSpeakingBlink = speaking;
+  // Reschedule interval saat mode berubah
+  if (blinkPhase === 'idle') {
+    nextBlinkIn = _scheduleNextBlink(speaking);
+    blinkTimer = 0;
+  }
 }
 
-/**
- * Langsung tulis ke morphTargetInfluences setelah vrm.update() selesai.
- * Ini satu-satunya cara yang dijamin bekerja karena vrm.update() bisa
- * menimpa nilai via overrideBlink multiplier.
- */
 function applyBlinkDirect(vrm: VRM, value: number): void {
   const em = vrm.expressionManager;
   if (!em) return;
@@ -44,17 +108,13 @@ function applyBlinkDirect(vrm: VRM, value: number): void {
   for (const name of names) {
     const expr = em.getExpression(name);
     if (!expr) continue;
-
-    // Akses _binds → primitives[] → morphTargetInfluences langsung
     // @ts-ignore
     const binds = expr._binds as Array<{
       primitives?: Array<{ morphTargetInfluences?: number[] }>;
       index?: number;
       weight?: number;
     }>;
-
     if (!binds?.length) continue;
-
     for (const bind of binds) {
       if (!bind.primitives || bind.index == null || bind.weight == null) continue;
       for (const mesh of bind.primitives) {
@@ -68,21 +128,17 @@ function applyBlinkDirect(vrm: VRM, value: number): void {
 
 export function updateBlink(delta: number, vrm: VRM): void {
   if (!vrm.expressionManager) return;
-
-  const setEyes = (v: number) => {
-    applyBlinkDirect(vrm, v);
-  };
+  const setEyes = (v: number) => applyBlinkDirect(vrm, v);
 
   if (blinkPhase === 'idle') {
     blinkTimer += delta;
+    setEyes(0);
     if (blinkTimer >= nextBlinkIn) {
       blinkTimer = 0;
-      nextBlinkIn = randomBlinkInterval();
+      blinksRemaining = _scheduleBurst();
+      _randomizeBlinkParams(false);
       blinkPhase = 'closing';
       blinkPhaseTimer = 0;
-    } else {
-      // Pastikan mata terbuka penuh saat idle
-      setEyes(0);
     }
     return;
   }
@@ -90,24 +146,44 @@ export function updateBlink(delta: number, vrm: VRM): void {
   blinkPhaseTimer += delta;
 
   if (blinkPhase === 'closing') {
-    const t = Math.min(blinkPhaseTimer / BLINK_CLOSE_DURATION, 1);
-    setEyes(t * t);
+    // Kurva ease-in kuadratik: akselerasi di awal (otot levator inhibition)
+    const t = Math.min(blinkPhaseTimer / _closeSpeed, 1);
+    setEyes(t * t * _peakValue);
     if (t >= 1) { blinkPhase = 'closed'; blinkPhaseTimer = 0; }
 
   } else if (blinkPhase === 'closed') {
-    setEyes(1);
-    if (blinkPhaseTimer >= BLINK_HOLD_DURATION) {
+    setEyes(_peakValue);
+    if (blinkPhaseTimer >= _holdTime) {
       blinkPhase = 'opening';
       blinkPhaseTimer = 0;
     }
 
   } else if (blinkPhase === 'opening') {
-    const t = Math.min(blinkPhaseTimer / BLINK_OPEN_DURATION, 1);
-    setEyes(1 - (1 - t) * (1 - t));
+    // Kurva ease-out + slight overshoot pada akhir (orbicularis rebound)
+    const t = Math.min(blinkPhaseTimer / _openSpeed, 1);
+    // ease-out cubic: lebih lambat di akhir
+    const eased = 1 - Math.pow(1 - t, 3);
+    setEyes(_peakValue * (1 - eased));
     if (t >= 1) {
       setEyes(0);
-      blinkPhase = 'idle';
-      blinkTimer = 0;
+      blinksRemaining--;
+      if (blinksRemaining > 0) {
+        blinkPhase = 'inter';
+        blinkPhaseTimer = 0;
+        // Randomize params untuk kedip berikutnya (lebih cepat)
+        _randomizeBlinkParams(true);
+      } else {
+        blinkPhase = 'idle';
+        blinkTimer = 0;
+        nextBlinkIn = _scheduleNextBlink(_isSpeakingBlink);
+      }
+    }
+
+  } else if (blinkPhase === 'inter') {
+    setEyes(0);
+    if (blinkPhaseTimer >= INTER_BLINK_GAP) {
+      blinkPhase = 'closing';
+      blinkPhaseTimer = 0;
     }
   }
 }
@@ -448,6 +524,17 @@ export function setIdleMoodEnabled(enabled: boolean): void {
   _idleEnabled = enabled;
 }
 
+/** Reset all mood state to neutral — call when a new VRM model is loaded. */
+export function resetMoodState(): void {
+  _currentPS = { ...PS_MOOD_PRESETS.neutral };
+  _targetPS  = { ...PS_MOOD_PRESETS.neutral };
+  _currentStd = { ...STD_MOOD_PRESETS.neutral };
+  _targetStd  = { ...STD_MOOD_PRESETS.neutral };
+  _activeMoodName = 'neutral';
+  _idleMoodTimer = 0;
+  _nextIdleMoodIn = 5 + Math.random() * 4;
+}
+
 // Pre-computed key arrays — avoids Object.keys() allocation every frame
 const PS_KEYS = Object.keys(PS_ZERO) as (keyof PerfectSyncWeights)[];
 const STD_KEYS = Object.keys(STD_ZERO) as (keyof StandardWeights)[];
@@ -520,7 +607,7 @@ export function updateMicroExpressions(elapsed: number, vrm: VRM, delta = 0.016)
     }
   }
 
-  const noise = Math.sin(elapsed * 3.7) * 0.012;
+  const noise = Math.sin(elapsed * 1.8) * 0.008;
   const mode = detectExpressionMode(vrm);
 
   if (mode === 'perfectsync') {

@@ -6,13 +6,16 @@ import { useUserRole } from '@/hooks/useUserRole';
 import VrmViewer, { type VrmViewerHandle } from '@/components/VrmViewer';
 import VrmaUploader from '@/components/VrmaUploader';
 import VrmaLibrary, { type VrmaItem } from '@/components/VrmaLibrary';
+import BlendshapeUploader, { type ParsedPreset } from '@/components/BlendshapeUploader';
+import BlendshapeLibrary, { type BlendshapePreset, BLENDSHAPE_CATEGORIES } from '@/components/BlendshapeLibrary';
+import { addPreset } from '@/lib/blendshape-store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ArrowLeft, Save, StopCircle, RotateCcw, Wand2, Library, Upload, Info } from 'lucide-react';
+import { ArrowLeft, Save, StopCircle, RotateCcw, Wand2, Library, Upload, Info, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 
 const CATEGORIES = ['talking', 'greeting', 'idle', 'emote', 'gesture', 'reaction'] as const;
@@ -42,7 +45,16 @@ export default function AdminAnimations() {
   const [loop, setLoop] = useState(false);
   const [saving, setSaving] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [activeTab, setActiveTab] = useState<'upload' | 'library'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'library' | 'blendshape'>('upload');
+
+  // ── Blendshape state ──────────────────────────────────────────────────────
+  const [bsParsed, setBsParsed] = useState<ParsedPreset | null>(null);
+  const [bsName, setBsName] = useState('');
+  const [bsCategory, setBsCategory] = useState<typeof BLENDSHAPE_CATEGORIES[number]>('custom');
+  const [bsDescription, setBsDescription] = useState('');
+  const [bsTargetMode, setBsTargetMode] = useState<'perfectsync' | 'standard' | 'both'>('both');
+  const [bsSaving, setBsSaving] = useState(false);
+  const [bsRefreshKey, setBsRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!user) return;
@@ -138,6 +150,47 @@ export default function AdminAnimations() {
     }
   };
 
+  // ── Blendshape handlers ───────────────────────────────────────────────────
+  const handleBsParsed = (preset: ParsedPreset) => {
+    setBsParsed(preset);
+    setBsName(preset.name);
+    // Preview on model immediately
+    viewerRef.current?.applyBlendshape(preset.weights);
+  };
+
+  const handleBsPreview = (preset: BlendshapePreset) => {
+    viewerRef.current?.applyBlendshape(preset.weights);
+    toast.success(`Preview: ${preset.name}`);
+  };
+
+  const handleBsClear = () => {
+    viewerRef.current?.clearBlendshape();
+    viewerRef.current?.setManualBlendshapeMode(false);
+  };
+
+  const handleBsSave = async () => {
+    if (!bsParsed || !user) { toast.error('Upload file JSON dulu'); return; }
+    if (!bsName.trim()) { toast.error('Beri nama dulu'); return; }
+    setBsSaving(true);
+    try {
+      addPreset({
+        name: bsName.trim(),
+        description: bsDescription.trim(),
+        category: bsCategory,
+        weights: bsParsed.weights,
+        target_mode: bsTargetMode,
+        is_active: true,
+      });
+      toast.success(`"${bsName}" tersimpan ke library`);
+      setBsParsed(null); setBsName(''); setBsDescription('');
+      setBsRefreshKey(k => k + 1);
+    } catch (e) {
+      toast.error(`Gagal simpan: ${(e as Error).message}`);
+    } finally {
+      setBsSaving(false);
+    }
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
       {/* Header */}
@@ -192,12 +245,20 @@ export default function AdminAnimations() {
           {/* Tab switcher */}
           <div className="flex border-b border-border/50 shrink-0">
             {[
-              { id: 'upload', label: 'Upload', icon: Upload },
-              { id: 'library', label: 'Library', icon: Library },
+              { id: 'upload',     label: 'Upload',     icon: Upload },
+              { id: 'library',    label: 'Library',    icon: Library },
+              { id: 'blendshape', label: 'Blendshape', icon: Layers },
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                onClick={() => setActiveTab(id as any)}
+                onClick={() => {
+                  // Leaving blendshape tab → resume auto mood
+                  if (activeTab === 'blendshape' && id !== 'blendshape') {
+                    viewerRef.current?.clearBlendshape();
+                    viewerRef.current?.setManualBlendshapeMode(false);
+                  }
+                  setActiveTab(id as any);
+                }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors border-b-2 ${
                   activeTab === id
                     ? 'border-primary text-primary'
@@ -288,8 +349,88 @@ export default function AdminAnimations() {
                     {saving ? 'Menyimpan…' : 'Simpan ke Library'}
                   </Button>
                 </>
-              ) : (
+              ) : activeTab === 'library' ? (
                 <VrmaLibrary refreshKey={refreshKey} onPlay={handlePlayFromLibrary} />
+              ) : (
+                /* ── Blendshape tab ── */
+                <>
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-semibold text-foreground">Import Preset</h3>
+                    <BlendshapeUploader onParsed={handleBsParsed} />
+                    {bsParsed && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/8 border border-primary/20">
+                        <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                        <p className="text-xs text-primary/80 font-mono truncate flex-1">
+                          {Object.keys(bsParsed.weights).length} blendshape dimuat
+                        </p>
+                        <button onClick={handleBsClear} className="text-[10px] text-muted-foreground hover:text-foreground">reset</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {bsParsed && (
+                    <div className="space-y-3">
+                      <h3 className="text-xs font-semibold text-foreground">Metadata</h3>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">Nama Preset</Label>
+                        <Input
+                          placeholder="e.g. Happy Smile, Surprised"
+                          value={bsName}
+                          onChange={e => setBsName(e.target.value)}
+                          className="h-9 bg-secondary/40 border-border/50 text-sm"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">Deskripsi</Label>
+                        <Input
+                          placeholder="Opsional"
+                          value={bsDescription}
+                          onChange={e => setBsDescription(e.target.value)}
+                          className="h-9 bg-secondary/40 border-border/50 text-sm"
+                        />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <div className="flex-1 space-y-1.5">
+                          <Label className="text-[11px] text-muted-foreground">Kategori</Label>
+                          <Select value={bsCategory} onValueChange={v => setBsCategory(v as any)}>
+                            <SelectTrigger className="h-9 bg-secondary/40 border-border/50 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {BLENDSHAPE_CATEGORIES.map(c => <SelectItem key={c} value={c} className="text-sm">{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1 space-y-1.5">
+                          <Label className="text-[11px] text-muted-foreground">Target</Label>
+                          <Select value={bsTargetMode} onValueChange={v => setBsTargetMode(v as any)}>
+                            <SelectTrigger className="h-9 bg-secondary/40 border-border/50 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="both" className="text-sm">Both</SelectItem>
+                              <SelectItem value="perfectsync" className="text-sm">Perfect Sync</SelectItem>
+                              <SelectItem value="standard" className="text-sm">Standard</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <Button onClick={handleBsSave} disabled={bsSaving} className="w-full gap-2 h-10">
+                        <Save className="w-4 h-4" />
+                        {bsSaving ? 'Menyimpan…' : 'Simpan ke Library'}
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="border-t border-border/40 pt-1">
+                    <h3 className="text-xs font-semibold text-foreground mb-3">Library</h3>
+                    <BlendshapeLibrary refreshKey={bsRefreshKey} onPreview={handleBsPreview} />
+                  </div>
+                </>
               )}
             </div>
           </ScrollArea>
