@@ -5,6 +5,8 @@ import ChatPanel from '@/components/ChatPanel';
 import UserMenu from '@/components/UserMenu';
 import NewUserModelBanner from '@/components/NewUserModelBanner';
 import CameraControls from '@/components/CameraControls';
+import EnvironmentControls from '@/components/EnvironmentControls';
+import LightingControls from '@/components/LightingControls';
 import OnboardingGuide from '@/components/OnboardingGuide';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import KeyboardShortcutsHelp from '@/components/KeyboardShortcutsHelp';
@@ -239,7 +241,6 @@ export default function Index() {
               audioElement={audioEl}
               currentMessage={spokenMessage}
               getAudioLevel={audioConnected ? getAudioLevel : undefined}
-              idlePresetId={idlePresetId}
             />
           </ErrorBoundary>
         </Suspense>
@@ -251,6 +252,22 @@ export default function Index() {
             onFreeModeChange={handleCameraFreeModeChange}
             isFreeMode={isCameraFree}
             currentPreset={currentCameraPreset}
+          />
+        )}
+
+        {/* Environment Controls */}
+        {modelUrl && (
+          <EnvironmentControls
+            onEnvironmentChange={(preset) => viewerRef.current?.setEnvironment(preset)}
+            onImageBackgroundChange={(imageUrl) => viewerRef.current?.setImageBackground(imageUrl)}
+            currentEnvironment={viewerRef.current?.getCurrentEnvironment() ?? 'cyberpunk-void'}
+          />
+        )}
+
+        {/* Lighting Controls */}
+        {modelUrl && (
+          <LightingControls
+            onLightingChange={(config) => viewerRef.current?.setLighting(config)}
           />
         )}
 

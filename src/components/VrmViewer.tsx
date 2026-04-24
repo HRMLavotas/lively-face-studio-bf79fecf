@@ -27,6 +27,8 @@ import { createMixer, playVRMA } from '@/lib/vrma-player';
 import { initLookAt, updateLookAt, setLookAtEnabled } from '@/lib/vrm-lookat';
 import { initSpringBones, updateSpringBones } from '@/lib/vrm-spring';
 import { getWebSpeechLipLevel } from '@/lib/web-speech-tts';
+import { createEnvironmentManager, type EnvironmentManager } from '@/lib/vrm-environment';
+import { createLightingManager, type LightingManager, type LightingConfig } from '@/lib/vrm-lighting';
 import type { PlayVrmaOptions } from '@/lib/vrma-player';
 import {
   computeAdaptivePresets,
@@ -51,6 +53,16 @@ export interface VrmViewerHandle {
   clearBlendshape: () => void;
   /** Enable/disable automatic mood expressions (for manual blendshape preview). */
   setManualBlendshapeMode: (enabled: boolean) => void;
+  /** Set environment background */
+  setEnvironment: (preset: string) => void;
+  /** Set image background */
+  setImageBackground: (imageUrl: string) => void;
+  /** Get current environment preset */
+  getCurrentEnvironment: () => string | null;
+  /** Update lighting configuration */
+  setLighting: (config: LightingConfig) => void;
+  /** Get current lighting configuration */
+  getCurrentLighting: () => LightingConfig | null;
 }
 
 interface VrmViewerProps {
@@ -92,6 +104,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const isFadingOutRef = useRef(false); // Track if we're fading out idle expression
   const vrmSceneHiddenRef = useRef<THREE.Group | null>(null); // Store VRM scene before adding to main scene
   const mixerUpdateCountRef = useRef(0); // Count mixer updates before showing model
+  const environmentManagerRef = useRef<EnvironmentManager | null>(null);
+  const lightingManagerRef = useRef<LightingManager | null>(null);
 
   isSpeakingRef.current = isSpeaking;
 
@@ -314,6 +328,21 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       manualBlendshapeRef.current = enabled;
       setIdleExpressionManual(enabled);
     },
+    setEnvironment: (preset: string) => {
+      environmentManagerRef.current?.setEnvironment(preset);
+    },
+    setImageBackground: (imageUrl: string) => {
+      environmentManagerRef.current?.setCustomImageBackground(imageUrl);
+    },
+    getCurrentEnvironment: () => {
+      return environmentManagerRef.current?.getCurrentPreset() ?? null;
+    },
+    setLighting: (config: LightingConfig) => {
+      lightingManagerRef.current?.updateLighting(config);
+    },
+    getCurrentLighting: () => {
+      return lightingManagerRef.current?.getCurrentConfig() ?? null;
+    },
   }), [animateCameraToPreset, playVrmaUrl, stopVrmaImperative]);
 
   // Keep getAudioLevel stable across renders
@@ -453,6 +482,24 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     const isMobile = container.clientWidth < 768;
     isMobileRef.current = isMobile;
 
+    // Initialize environment manager
+    environmentManagerRef.current = createEnvironmentManager(scene);
+    // Set default cyberpunk environment
+    environmentManagerRef.current.setEnvironment('cyberpunk-void');
+
+    // Initialize lighting manager
+    lightingManagerRef.current = createLightingManager(scene, isMobile);
+    // Set default cyberpunk lighting
+    lightingManagerRef.current.updateLighting({
+      preset: 'cyberpunk',
+      ambientIntensity: 0.8,
+      keyLightIntensity: 1.2,
+      fillLightIntensity: 0.4,
+      rimLightIntensity: 0.3,
+      ambientColor: '#88cccc',
+      keyLightColor: '#ffffff',
+    });
+
     const camera = new THREE.PerspectiveCamera(
       isMobile ? 38 : 34,
       container.clientWidth / container.clientHeight,
@@ -511,19 +558,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     controls.update();
     orbitControlsRef.current = controls;
 
-    // Lighting
-    scene.add(new THREE.AmbientLight(0x88cccc, 0.8));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    keyLight.position.set(1, 2, 2);
-    scene.add(keyLight);
-    if (!isMobile) {
-      const fill = new THREE.DirectionalLight(0x40e0d0, 0.4);
-      fill.position.set(-2, 1, 0);
-      scene.add(fill);
-      const rim = new THREE.DirectionalLight(0x9966ff, 0.3);
-      rim.position.set(0, 1, -2);
-      scene.add(rim);
-    }
+    // Remove the old manual lighting setup since we now use LightingManager
+    // Lighting is now handled by lightingManagerRef.current
 
     // Load VRM
     const loader = new GLTFLoader();
@@ -597,6 +633,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       if (vrmRef.current && wasMobile !== nowMobile && adaptivePresetsRef.current) {
         adaptivePresetsRef.current = computeAdaptivePresets(vrmRef.current);
       }
+      
+      // Update lighting manager for mobile/desktop changes
+      if (wasMobile !== nowMobile && lightingManagerRef.current) {
+        lightingManagerRef.current.setMobileMode(nowMobile);
+      }
       if (!cameraFreeRef.current && adaptivePresetsRef.current) {
         const p = adaptivePresetsRef.current['medium-shot'];
         camera.position.set(...p.position);
@@ -631,6 +672,10 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       orbitControlsRef.current?.dispose();
       orbitControlsRef.current = null;
       mixerRef.current = null;
+      environmentManagerRef.current?.dispose();
+      environmentManagerRef.current = null;
+      lightingManagerRef.current?.dispose();
+      lightingManagerRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelUrl]);
