@@ -137,11 +137,12 @@ export function useVrmaAnimations(
                 action.setLoop(THREE.LoopRepeat, Infinity);
                 action.enabled = true;
                 action.weight = 1;
-                action.fadeIn(0.3);
+                action.fadeIn(1.0); // Increased from 0.3 to 1.0 for slower transition
                 action.play();
                 idleActionRef.current = action;
                 vrmaPlayingRef.current = true;
                 activeDrivenBonesRef.current = getClipDrivenBones(clip);
+                console.log('[VRMA Idle] First idle animation started - model ready to show');
               }
             } else if (!firstStarted) {
               firstStarted = true;
@@ -191,7 +192,7 @@ export function useVrmaAnimations(
       action.setLoop(THREE.LoopRepeat, Infinity);
       action.enabled = true;
       action.weight = 1;
-      action.fadeIn(0.4);
+      action.fadeIn(1.2); // Increased from 0.4 to 1.2 for slower transition
       action.play();
       idleActionRef.current = action;
       vrmaPlayingRef.current = true;
@@ -223,13 +224,13 @@ export function useVrmaAnimations(
     const nextClip = clips[nextIdx];
     idleClipRef.current = nextClip;
     try {
-      idleActionRef.current?.fadeOut(0.6);
+      idleActionRef.current?.fadeOut(1.8); // Increased from 0.6 to 1.8 for slower fade out
       const newAction = mixer.clipAction(nextClip);
       newAction.reset();
       newAction.setLoop(THREE.LoopRepeat, Infinity);
       newAction.enabled = true;
       newAction.weight = 1;
-      newAction.fadeIn(0.6);
+      newAction.fadeIn(1.8); // Increased from 0.6 to 1.8 for slower fade in
       newAction.play();
       idleActionRef.current = newAction;
       activeDrivenBonesRef.current = getClipDrivenBones(nextClip);
@@ -291,7 +292,7 @@ export function useVrmaAnimations(
     const clip = clips[idx];
     vrmaPlayingRef.current = true;
 
-    const fadeIn = idleActionRef.current?.isRunning() ? 0.25 : 0.3;
+    const fadeIn = idleActionRef.current?.isRunning() ? 0.8 : 1.0; // Increased from 0.25/0.3 to 0.8/1.0 for slower transition
     const action = playVRMA(mixer, clip, { loop: false, fadeIn });
     if (!action) { vrmaPlayingRef.current = false; return; }
 
@@ -356,7 +357,7 @@ export function useVrmaAnimations(
       } else if (m && idleClips.length > 0) {
         const idleClip = idleClips[idleCurrentIndexRef.current % idleClips.length];
         idleClipRef.current = idleClip;
-        const idleAction = playVRMA(m, idleClip, { loop: true, fadeIn: 0.5 });
+        const idleAction = playVRMA(m, idleClip, { loop: true, fadeIn: 1.5 }); // Increased from 0.5 to 1.5 for slower transition
         if (idleAction) {
           idleActionRef.current = idleAction;
           vrmaPlayingRef.current = true;
@@ -367,9 +368,9 @@ export function useVrmaAnimations(
       } else if (m) {
         isReturnToRestRef.current = true;
         const actions = (m as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];
-        actions.forEach((a) => { try { a.fadeOut(0.5); } catch (_) { /* ok */ } });
+        actions.forEach((a) => { try { a.fadeOut(1.5); } catch (_) { /* ok */ } }); // Increased from 0.5 to 1.5 for slower fade out
         vrmaPlayingRef.current = false;
-        setTimeout(() => { isReturnToRestRef.current = false; restartIdleLoop(); }, 600);
+        setTimeout(() => { isReturnToRestRef.current = false; restartIdleLoop(); }, 1600); // Increased from 600 to 1600 to match fade duration
       } else {
         vrmaPlayingRef.current = false;
       }
@@ -379,7 +380,7 @@ export function useVrmaAnimations(
   }, [playNextTalking, restartIdleLoop]);
 
   // ── Stop VRMA (imperative) ────────────────────────────────────────────────
-  const stopVrmaImperative = useCallback((fadeOut = 0.3) => {
+  const stopVrmaImperative = useCallback((fadeOut = 1.0) => { // Increased from 0.3 to 1.0 for slower fade out
     isTalkingPlayingRef.current = false;
     vrmaActionRef.current = null;
     const mixer = mixerRef.current;

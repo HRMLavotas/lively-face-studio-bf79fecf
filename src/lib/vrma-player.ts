@@ -217,7 +217,7 @@ export function playVRMA(
     console.warn('playVRMA: mixer is null, skipping');
     return null;
   }
-  const { loop = false, fadeIn = 0.4, clamp = false } = opts;
+  const { loop = false, fadeIn = 1.5, clamp = false } = opts; // Increased from 0.4 to 1.5 for slower, more natural transitions
 
   // Find the single most-weighted active action to crossfade FROM.
   // Using crossFadeTo is more reliable than manual weight manipulation.
@@ -278,7 +278,7 @@ export function playVRMA(
  * NEVER call stopAllAction() — that causes an immediate T-pose snap.
  * Callers should immediately crossfade to an idle/rest clip after calling this.
  */
-export function stopVRMA(mixer: THREE.AnimationMixer | null, fadeOut = 0.3): void {
+export function stopVRMA(mixer: THREE.AnimationMixer | null, fadeOut = 1.0): void { // Increased from 0.3 to 1.0 for slower fade out
   if (!mixer) return;
   try {
     const actions = (mixer as unknown as { _actions: THREE.AnimationAction[] })._actions ?? [];

@@ -90,6 +90,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const isFadingOutRef = useRef(false); // Track if we're fading out idle expression
+  const vrmSceneHiddenRef = useRef<THREE.Group | null>(null); // Store VRM scene before adding to main scene
+  const mixerUpdateCountRef = useRef(0); // Count mixer updates before showing model
 
   isSpeakingRef.current = isSpeaking;
 
@@ -339,7 +341,26 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
     if (vrm) {
       // 1. Update mixer first — VRMA clips drive bones
-      mixerRef.current?.update(delta);
+      if (mixerRef.current) {
+        mixerRef.current.update(delta);
+        
+        // Count mixer updates - need several frames for animation to fully apply
+        if (vrmSceneHiddenRef.current && (idleActionRef.current || vrmaActionRef.current)) {
+          mixerUpdateCountRef.current++;
+        }
+      }
+      
+      // 0. Add model to scene AFTER mixer has updated multiple times
+      // This ensures bones are fully transformed by VRMA before model becomes visible
+      // Wait for 10 frames (~166ms at 60fps) to ensure animation is fully applied
+      if (vrmSceneHiddenRef.current && mixerUpdateCountRef.current >= 10) {
+        const scene = sceneRef.current;
+        if (scene) {
+          scene.add(vrmSceneHiddenRef.current);
+          console.log('[VRM] VRMA animation fully applied after', mixerUpdateCountRef.current, 'frames - model now visible');
+          vrmSceneHiddenRef.current = null; // Clear reference
+        }
+      }
 
       // 2. Look-at — desktop only (no mouse on mobile)
       if (cameraRef.current && !cameraFreeRef.current && !isMobileRef.current) {
@@ -414,6 +435,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     }
     sceneRef.current?.clear();
     adaptivePresetsRef.current = null;
+    vrmSceneHiddenRef.current = null; // Reset hidden scene reference
+    mixerUpdateCountRef.current = 0; // Reset mixer update counter
 
     if (!modelUrl) {
       setLoading(false);
@@ -511,9 +534,14 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         const vrm = gltf.userData.vrm as VRM;
         if (!vrm) { setError('File bukan VRM yang valid'); setLoading(false); return; }
         try { VRMUtils.rotateVRM0(vrm); } catch (_) { /* VRM1 */ }
-        scene.add(vrm.scene);
+        
+        // DON'T add to scene yet - store it and wait for first VRMA animation
+        // This prevents T-pose flash
+        vrmSceneHiddenRef.current = vrm.scene;
         vrmRef.current = vrm;
         mixerRef.current = createMixer(vrm);
+        
+        console.log('[VRM] Model loaded, waiting for first VRMA animation before showing...');
 
         // Init spring bones for secondary motion
         initSpringBones(vrm);
