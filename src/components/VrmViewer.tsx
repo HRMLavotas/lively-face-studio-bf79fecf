@@ -10,6 +10,16 @@ import {
   resetMouthExpressions,
   updateIdleMicroGestures,
 } from '@/lib/vrm-animations';
+
+import { detectMood } from '@/lib/sentiment';
+import {
+  initIdleExpression,
+  updateIdleExpression,
+  setIdleExpressionPaused,
+  setIdleExpressionManual,
+  applyMoodOverride,
+  debugExpressionKeys,
+} from '@/lib/idle-expression-advanced';
 import { createMixer, playVRMA } from '@/lib/vrma-player';
 import { initLookAt, updateLookAt, setLookAtEnabled } from '@/lib/vrm-lookat';
 import { initSpringBones, updateSpringBones } from '@/lib/vrm-spring';
@@ -78,11 +88,21 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   const [error, setError] = useState<string | null>(null);
 
   isSpeakingRef.current = isSpeaking;
-  
-  // Notify blink system when speaking state changes
+
+  // Pause/resume idle expression saat speaking berubah
   useEffect(() => {
+    setIdleExpressionPaused(isSpeaking);
     setBlinkSpeakingMode(isSpeaking);
   }, [isSpeaking]);
+
+  // Mood override dari AI reply
+  useEffect(() => {
+    if (!currentMessage || !isSpeaking) return;
+    const mood = detectMood(currentMessage);
+    if (mood !== 'neutral' && vrmRef.current) {
+      applyMoodOverride(mood, 4, vrmRef.current);
+    }
+  }, [currentMessage, isSpeaking]);
 
   // ── Animation system ──────────────────────────────────────────────────────
   const {
@@ -272,6 +292,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     },
     setManualBlendshapeMode: (enabled: boolean) => {
       manualBlendshapeRef.current = enabled;
+      setIdleExpressionManual(enabled);
     },
   }), [animateCameraToPreset, playVrmaUrl, stopVrmaImperative]);
 
@@ -302,18 +323,12 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       // 1. Update mixer first — VRMA clips drive bones
       mixerRef.current?.update(delta);
 
-      // 2. Procedural micro-gestures — body breathing only (no expression override)
-      const isManualOrTalking = !!vrmaActionRef.current || isTalkingPlayingRef.current;
-      if (!isManualOrTalking) {
-        updateIdleMicroGestures(elapsedTime, vrm, activeDrivenBonesRef.current);
-      }
-
-      // 3. Look-at — desktop only (no mouse on mobile)
+      // 2. Look-at — desktop only (no mouse on mobile)
       if (cameraRef.current && !cameraFreeRef.current && !isMobileRef.current) {
         updateLookAt(delta, vrm, cameraRef.current, new Set());
       }
 
-      // 4. Lip sync
+      // 3. Lip sync - set expression values
       if (isSpeakingRef.current) {
         vrm.expressionManager?.setValue('aa', 0);
         const level = isWebSpeechActiveRef.current
@@ -322,14 +337,26 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         updateLipSync(level, vrm, delta);
       }
 
-      // 5. Apply all expression weights to morph targets
+      // 4. Idle expression rotation (auto mood system) - set expression values
+      // Jalan terus, tapi akan di-pause internal saat isSpeaking
+      if (!manualBlendshapeRef.current) {
+        updateIdleExpression(delta, vrm);
+      }
+
+      // 5. Blink - set expression values BEFORE vrm.update()
+      updateBlink(delta, vrm);
+
+      // 6. Apply all expression weights to morph targets - MUST be called after setting values
       vrm.update(delta);
 
-      // 6. Spring bones — secondary motion (hair, accessories, etc.)
-      updateSpringBones(delta, vrm);
+      // 7. Procedural micro-gestures — body breathing only (no expression override)
+      const isManualOrTalking = !!vrmaActionRef.current || isTalkingPlayingRef.current;
+      if (!isManualOrTalking) {
+        updateIdleMicroGestures(elapsedTime, vrm, activeDrivenBonesRef.current);
+      }
 
-      // 7. Blink — runs after vrm.update() every frame
-      updateBlink(delta, vrm);
+      // 8. Spring bones — secondary motion (hair, accessories, etc.)
+      updateSpringBones(delta, vrm);
     }
 
     if (orbitControlsRef.current?.enabled) {
@@ -457,6 +484,12 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
         // Init spring bones for secondary motion
         initSpringBones(vrm);
+
+        // Init idle expression rotation
+        initIdleExpression();
+        
+        // Debug: log available expressions
+        debugExpressionKeys(vrm);
 
         requestAnimationFrame(() => {
           const presets = computeAdaptivePresets(vrm);

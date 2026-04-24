@@ -14,10 +14,10 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/useUserRole';
 import { detectMood } from '@/lib/sentiment';
-import { setTargetMood } from '@/lib/vrm-animations';
 import { useVrmaTriggers } from '@/hooks/useVrmaTriggers';
 import { useAudioAnalyser } from '@/hooks/useAudioAnalyser';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useIdlePreset } from '@/hooks/useIdlePreset';
 import { parseAnimTag, isWebSpeechUrl, getWebSpeechText } from '@/lib/chat-api';
 import { speakWithWebSpeech, stopWebSpeech, preloadVoices } from '@/lib/web-speech-tts';
 import { useTTSProvider } from '@/hooks/useTTSProvider';
@@ -31,6 +31,7 @@ export default function Index() {
   const { user } = useAuth();
   const { isPro } = useUserRole();
   const { activeProvider, handleRateLimit } = useTTSProvider(isPro);
+  const { idlePresetId, setIdlePreset } = useIdlePreset();
 
   // Preload Web Speech voices on mount
   useEffect(() => { preloadVoices(); }, []);
@@ -175,8 +176,6 @@ export default function Index() {
   const handleUserMessage = useCallback(
     (text: string) => {
       if (!audioConnected) setAudioConnected(true);
-      const mood = detectMood(text);
-      if (mood !== 'neutral') setTargetMood(mood);
       const match = findMatch(text, userLangPref, ['greeting', 'emote']);
       if (match && viewerRef.current?.isVrmLoaded()) {
         viewerRef.current.playVrmaUrl(match.url, { loop: false, fadeIn: 0.4 }).catch(console.warn);
@@ -240,6 +239,7 @@ export default function Index() {
               audioElement={audioEl}
               currentMessage={spokenMessage}
               getAudioLevel={audioConnected ? getAudioLevel : undefined}
+              idlePresetId={idlePresetId}
             />
           </ErrorBoundary>
         </Suspense>
