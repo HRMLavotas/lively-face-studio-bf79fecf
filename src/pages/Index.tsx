@@ -301,18 +301,10 @@ export default function Index() {
                   Background & Environment
                 </TooltipContent>
               </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span>
-                    <LightingControls
-                      onLightingChange={(config) => viewerRef.current?.setLighting(config)}
-                    />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="left" className="panel-overlay border-0 text-xs text-foreground/90">
-                  Pencahayaan
-                </TooltipContent>
-              </Tooltip>
+              <LightingControls
+                onLightingChange={(config) => viewerRef.current?.setLighting(config)}
+                initialConfig={viewerRef.current?.getCurrentLighting() || undefined}
+              />
             </>
           )}
         </div>
