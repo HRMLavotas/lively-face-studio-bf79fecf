@@ -75,10 +75,11 @@ interface VrmViewerProps {
   getAudioLevel?: () => number;
   onLevelUp?: (newLevel: number) => void;
   ambientEffect?: 'none' | 'sakura' | 'rain' | 'snow' | 'leaves';
+  showSubtitles?: boolean;
 }
 
 const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer(
-  { modelUrl, isSpeaking = false, isWebSpeechActive = false, audioElement, currentMessage, className, getAudioLevel, onLevelUp, ambientEffect = 'none' },
+  { modelUrl, isSpeaking = false, isWebSpeechActive = false, audioElement, currentMessage, className, getAudioLevel, onLevelUp, ambientEffect = 'none', showSubtitles = true },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1069,11 +1070,15 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           </div>
         </div>
 
-        {/* Floating Subtitle */}
-        {isSpeaking && currentMessage && (
-          <div className="pb-24 px-4 w-full flex items-end justify-center pointer-events-none">
-            <div className="cinematic-subtitle">
-              {currentMessage}
+        {/* Floating Subtitle - Positioned at bottom center with safe margin */}
+        {showSubtitles && isSpeaking && currentMessage && (
+          <div className="absolute bottom-32 left-0 right-0 px-4 flex justify-center pointer-events-none z-30">
+            <div className="px-6 py-3 rounded-2xl cyber-glass border border-white/10 text-center shadow-2xl relative overflow-hidden group max-w-[85%] md:max-w-2xl">
+              <div className="absolute inset-0 bg-gradient-to-t from-primary/10 to-transparent opacity-50" />
+              <p className="text-white text-lg md:text-xl font-medium tracking-tight drop-shadow-lg relative z-10 leading-relaxed">
+                {currentMessage}
+              </p>
+              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
             </div>
           </div>
         )}

@@ -8,7 +8,7 @@ import {
   Send, Volume2, ChevronDown, X, Bot, User,
   Square, Plus, History, Trash2, Pencil, Check,
   Search, Download, RefreshCw, MoreVertical, Upload, Wifi, WifiOff,
-  Mic, MicOff, Radio,
+  Mic, MicOff, Radio
 } from 'lucide-react';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -33,6 +33,8 @@ interface ChatPanelProps {
   onToggle?: () => void;
   onUnreadChange?: (hasUnread: boolean) => void;
   isSpeaking?: boolean;
+  showSubtitles?: boolean;
+  onToggleSubtitles?: () => void;
   availableAnimations?: string[];
 }
 
@@ -49,6 +51,8 @@ export default function ChatPanel({
   onToggle,
   onUnreadChange,
   isSpeaking = false,
+  showSubtitles = true,
+  onToggleSubtitles,
   availableAnimations = [],
 }: ChatPanelProps) {
   const { user } = useAuth();
@@ -546,6 +550,28 @@ export default function ChatPanel({
             else { setSpeechMode(true); stt.start(); }
           }}
         />
+
+        {/* CC Toggle */}
+        <Button
+          type="button"
+          size="icon"
+          onClick={onToggleSubtitles}
+          className={`h-10 w-10 shrink-0 btn-overlay transition-all ${
+            showSubtitles ? 'text-primary neon-glow-purple brightness-125' : 'text-muted-foreground opacity-40'
+          }`}
+          title={showSubtitles ? 'CC Aktif' : 'CC Mati'}
+        >
+          <div className="flex flex-col items-center gap-0.5">
+            <span className={`text-[10px] font-bold border rounded-[3px] px-0.5 leading-tight transition-colors ${
+              showSubtitles 
+                ? 'border-primary text-primary bg-primary/10 shadow-[0_0_8px_rgba(168,85,247,0.4)]' 
+                : 'border-muted-foreground/40 text-muted-foreground opacity-60'
+            }`}>CC</span>
+            <div className={`w-1 h-1 rounded-full transition-all duration-300 ${
+              showSubtitles ? 'bg-primary shadow-[0_0_5px_#a855f7] scale-100' : 'bg-muted-foreground/20 scale-50'
+            }`} />
+          </div>
+        </Button>
 
         <div className="flex-1 min-w-0">
           <Textarea

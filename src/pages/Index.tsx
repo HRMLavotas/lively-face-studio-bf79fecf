@@ -56,6 +56,9 @@ export default function Index() {
   const [ambientEffect, setAmbientEffect] = useState<'none' | 'sakura' | 'rain' | 'snow' | 'leaves'>(() => 
     (localStorage.getItem('vrm.ambient') as any) || 'none'
   );
+  const [showSubtitles, setShowSubtitles] = useState(() => 
+    localStorage.getItem('vrm.showSubtitles') !== 'false'
+  );
 
   const viewerRef = useRef<VrmViewerHandle>(null);
 
@@ -128,6 +131,14 @@ export default function Index() {
     localStorage.setItem('vrm.ambient', effect);
   }, []);
 
+  const handleToggleSubtitles = useCallback(() => {
+    setShowSubtitles(prev => {
+      const next = !prev;
+      localStorage.setItem('vrm.showSubtitles', String(next));
+      return next;
+    });
+  }, []);
+
   const handleSpeakStart = useCallback(
     (audioUrl: string, messageText?: string) => {
       const audio = audioRef.current;
@@ -187,13 +198,11 @@ export default function Index() {
 
   const handleUserMessage = useCallback(
     (text: string) => {
+      // User interacted, ensures audio can play
       if (!audioConnected) setAudioConnected(true);
-      const match = findMatch(text, userLangPref, ['greeting', 'emote']);
-      if (match && viewerRef.current?.isVrmLoaded()) {
-        viewerRef.current.playVrmaUrl(match.url, { loop: false, fadeIn: 0.4 }).catch(console.warn);
-      }
+      lastInteractionTime.current = Date.now();
     },
-    [findMatch, userLangPref, audioConnected],
+    [audioConnected],
   );
 
   const handleCameraPresetChange = useCallback((preset: CameraPreset) => {
@@ -289,6 +298,7 @@ export default function Index() {
               getAudioLevel={audioConnected ? getAudioLevel : undefined}
               onLevelUp={handleLevelUp}
               ambientEffect={ambientEffect}
+              showSubtitles={showSubtitles}
               className="w-full h-full"
             />
           </ErrorBoundary>
@@ -393,6 +403,8 @@ export default function Index() {
         onUnreadChange={setHasUnread}
         personality={personality}
         isSpeaking={isSpeaking}
+        showSubtitles={showSubtitles}
+        onToggleSubtitles={handleToggleSubtitles}
         availableAnimations={clips.map(c => c.name)}
       />
     </div>
