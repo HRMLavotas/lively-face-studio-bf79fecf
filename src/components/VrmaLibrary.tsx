@@ -66,6 +66,7 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
       .order('name', { ascending: true });
     if (error) toast.error('Gagal memuat library');
     else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setItems((data ?? []).map((d: any) => ({
         id: d.id, name: d.name, file_path: d.file_path, file_name: d.file_name,
         category: d.category, trigger_keywords: d.trigger_keywords ?? [],
@@ -76,7 +77,7 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [refreshKey]); // eslint-disable-line
+  useEffect(() => { load(); }, [refreshKey]);  
 
   const handlePlay = (item: VrmaItem) => {
     const { data } = supabase.storage.from('vrma-animations').getPublicUrl(item.file_path);
@@ -123,6 +124,7 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
       for (const k of arr) { const key = k.toLowerCase(); if (!seen.has(key)) { seen.add(key); flat.push(k); } }
     }
     const { error } = await supabase.from('vrma_animations')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .update({ name: editState.name.trim(), category: editState.category, trigger_keywords: flat, trigger_keywords_i18n: i18n as any })
       .eq('id', item.id);
     setSaving(false);
@@ -154,6 +156,7 @@ export default function VrmaLibrary({ refreshKey, onPlay }: VrmaLibraryProps) {
     if (catItems.length > 0) acc[cat] = catItems;
     return acc;
   }, {});
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const unknownCat = items.filter((i) => !CATEGORIES.includes(i.category as any));
   if (unknownCat.length > 0) grouped['other'] = unknownCat;
 

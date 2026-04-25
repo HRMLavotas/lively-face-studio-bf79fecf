@@ -257,7 +257,7 @@ export default function AdminAnimations() {
                     viewerRef.current?.clearBlendshape();
                     viewerRef.current?.setManualBlendshapeMode(false);
                   }
-                  setActiveTab(id as any);
+                  setActiveTab(id as 'upload' | 'library' | 'blendshape');
                 }}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors border-b-2 ${
                   activeTab === id
@@ -321,7 +321,7 @@ export default function AdminAnimations() {
 
                     <div className="space-y-1.5">
                       <Label htmlFor="anim-cat" className="text-[11px] text-muted-foreground">Kategori</Label>
-                      <Select value={category} onValueChange={(v) => setCategory(v as any)}>
+                      <Select value={category} onValueChange={(v) => setCategory(v as typeof CATEGORIES[number])}>
                         <SelectTrigger id="anim-cat" className="h-9 bg-secondary/40 border-border/50 text-sm">
                           <SelectValue />
                         </SelectTrigger>
@@ -395,7 +395,7 @@ export default function AdminAnimations() {
                       <div className="flex gap-2">
                         <div className="flex-1 space-y-1.5">
                           <Label className="text-[11px] text-muted-foreground">Kategori</Label>
-                          <Select value={bsCategory} onValueChange={v => setBsCategory(v as any)}>
+                          <Select value={bsCategory} onValueChange={v => setBsCategory(v as typeof BLENDSHAPE_CATEGORIES[number])}>
                             <SelectTrigger className="h-9 bg-secondary/40 border-border/50 text-sm">
                               <SelectValue />
                             </SelectTrigger>
@@ -406,7 +406,7 @@ export default function AdminAnimations() {
                         </div>
                         <div className="flex-1 space-y-1.5">
                           <Label className="text-[11px] text-muted-foreground">Target</Label>
-                          <Select value={bsTargetMode} onValueChange={v => setBsTargetMode(v as any)}>
+                          <Select value={bsTargetMode} onValueChange={v => setBsTargetMode(v as 'perfectsync' | 'standard' | 'both')}>
                             <SelectTrigger className="h-9 bg-secondary/40 border-border/50 text-sm">
                               <SelectValue />
                             </SelectTrigger>

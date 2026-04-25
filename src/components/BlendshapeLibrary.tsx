@@ -48,7 +48,7 @@ export default function BlendshapeLibrary({ refreshKey, onPreview }: Props) {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, [refreshKey]); // eslint-disable-line
+  useEffect(() => { load(); }, [refreshKey]);  
 
   const handleToggle = (item: BlendshapePreset) => {
     updatePreset(item.id, { is_active: !item.is_active });

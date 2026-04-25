@@ -234,7 +234,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     if (!isSpeaking && vrmRef.current) {
       resetMouthExpressions(vrmRef.current);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [isSpeaking]);
 
   // ── Camera animation ──────────────────────────────────────────────────────

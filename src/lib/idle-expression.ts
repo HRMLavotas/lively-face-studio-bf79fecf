@@ -146,6 +146,7 @@ export function debugExpressionKeys(vrm: VRM): void {
   for (const key of keys) {
     const expr = expressions[key];
     if (expr && typeof expr === 'object' && 'expressionName' in expr) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       names.push((expr as any).expressionName || key);
     } else {
       names.push(key);

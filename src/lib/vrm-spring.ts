@@ -57,7 +57,7 @@ export function initSpringBones(vrm: VRM): void {
   _hasBuiltinSpring = false;
 
   // Check if VRM has built-in spring bone manager
-  // @ts-ignore — springBoneManager is part of @pixiv/three-vrm but not in types
+  // @ts-expect-error — springBoneManager is part of @pixiv/three-vrm but not in types
   if (vrm.springBoneManager) {
     _hasBuiltinSpring = true;
     console.log('[Spring] VRM has built-in spring bones — using native system');

@@ -157,6 +157,7 @@ export function useConversations(userId: string | undefined) {
           id: item.id,
           title: item.title,
           updated_at: item.exported_at ?? item.updated_at ?? new Date().toISOString(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           messages: item.messages.filter((m: any) =>
             (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string'
           ),

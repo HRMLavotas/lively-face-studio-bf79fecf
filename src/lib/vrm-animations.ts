@@ -108,7 +108,7 @@ function applyBlinkDirect(vrm: VRM, value: number): void {
   for (const name of names) {
     const expr = em.getExpression(name);
     if (!expr) continue;
-    // @ts-ignore
+    // @ts-expect-error — _binds is private
     const binds = expr._binds as Array<{
       primitives?: Array<{ morphTargetInfluences?: number[] }>;
       index?: number;
@@ -216,7 +216,7 @@ export function detectExpressionMode(vrm: VRM): 'perfectsync' | 'standard' {
   // List all available expressions for debugging
   const allExpressions: string[] = [];
   try {
-    // @ts-ignore — access internal map to enumerate all expressions
+    // @ts-expect-error — access internal map to enumerate all expressions
     const map = vrm.expressionManager._expressionMap ?? vrm.expressionManager.expressionMap;
     if (map) {
       for (const key of Object.keys(map)) {
@@ -229,7 +229,7 @@ export function detectExpressionMode(vrm: VRM): 'perfectsync' | 'standard' {
   console.log('[Expressions] Expression details:');
   for (const key of allExpressions) {
     const expr = vrm.expressionManager.getExpression(key);
-    // @ts-ignore
+    // @ts-expect-error — private properties
     const binds = expr?.binds ?? expr?._binds ?? [];
     console.log(`  ${key}: ${binds.length} bind(s)`);
   }
@@ -240,7 +240,7 @@ export function detectExpressionMode(vrm: VRM): 'perfectsync' | 'standard' {
   for (const k of psKeys) {
     const expr = vrm.expressionManager.getExpression(k);
     if (expr) {
-      // @ts-ignore
+      // @ts-expect-error — private properties
       const binds = expr.binds ?? expr._binds ?? [];
       if (binds.length > 0) psCount++;
     }

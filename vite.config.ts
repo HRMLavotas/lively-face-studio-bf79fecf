@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
-    // @ts-ignore
+    // @ts-expect-error: property may not exist in older vite versions
     allowedHosts: process.env.TEMPO === "true" ? true : undefined,
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),

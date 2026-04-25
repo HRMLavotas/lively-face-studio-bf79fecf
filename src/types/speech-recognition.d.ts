@@ -18,14 +18,14 @@ interface SpeechRecognition extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
-  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
-  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
-  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
   start(): void;
   stop(): void;
   abort(): void;
 }
 
-declare var SpeechRecognition: { prototype: SpeechRecognition; new (): SpeechRecognition };
-declare var webkitSpeechRecognition: { prototype: SpeechRecognition; new (): SpeechRecognition };
+declare let SpeechRecognition: { prototype: SpeechRecognition; new (): SpeechRecognition };
+declare let webkitSpeechRecognition: { prototype: SpeechRecognition; new (): SpeechRecognition };

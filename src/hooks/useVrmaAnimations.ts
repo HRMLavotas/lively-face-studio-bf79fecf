@@ -242,6 +242,7 @@ export function useVrmaAnimations(
   // ── Idle loop event listener ──────────────────────────────────────────────
   useEffect(() => {
     let attached = false;
+    // eslint-disable-next-line prefer-const
     let intervalId: ReturnType<typeof setInterval>;
 
     const attachListener = () => {
@@ -278,7 +279,7 @@ export function useVrmaAnimations(
         }
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [modelUrl, loading, switchIdleClip]);
 
   // ── Play next talking clip ────────────────────────────────────────────────
@@ -311,7 +312,7 @@ export function useVrmaAnimations(
       }
     };
     mixer.addEventListener('finished', onFinished);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, []);
 
   // ── Play VRMA from URL (imperative, called by parent) ────────────────────
