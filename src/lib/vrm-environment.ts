@@ -49,6 +49,26 @@ export const ENVIRONMENT_PRESETS: Record<string, EnvironmentConfig> = {
     background: ['#00FF00'], // Solid pure green for Chroma Key
     intensity: 1.0,
   },
+  'morning-sky': {
+    type: 'gradient',
+    background: ['#ff9a9e', '#fecfef', '#fbc2eb'], // Warm pink/soft morning
+    intensity: 1.0,
+  },
+  'daylight-sky': {
+    type: 'gradient',
+    background: ['#a1c4fd', '#c2e9fb', '#e1f5fe'], // Bright blue day
+    intensity: 1.2,
+  },
+  'sunset-sky': {
+    type: 'gradient',
+    background: ['#2c3e50', '#fd746c', '#ff9068'], // Deep orange/red sunset
+    intensity: 1.0,
+  },
+  'night-sky': {
+    type: 'gradient',
+    background: ['#050505', '#16213e', '#1a1a2e'], // Deep dark blue
+    intensity: 0.6,
+  },
 };
 
 export class EnvironmentManager {

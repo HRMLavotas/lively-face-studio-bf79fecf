@@ -59,6 +59,9 @@ export default function Index() {
   const [showSubtitles, setShowSubtitles] = useState(() => 
     localStorage.getItem('vrm.showSubtitles') !== 'false'
   );
+  const [autoEnvironment, setAutoEnvironment] = useState(() => 
+    localStorage.getItem('vrm.autoEnvironment') !== 'false'
+  );
 
   const viewerRef = useRef<VrmViewerHandle>(null);
 
@@ -135,6 +138,14 @@ export default function Index() {
     setShowSubtitles(prev => {
       const next = !prev;
       localStorage.setItem('vrm.showSubtitles', String(next));
+      return next;
+    });
+  }, []);
+
+  const handleToggleAutoEnvironment = useCallback(() => {
+    setAutoEnvironment(prev => {
+      const next = !prev;
+      localStorage.setItem('vrm.autoEnvironment', String(next));
       return next;
     });
   }, []);
@@ -234,6 +245,54 @@ export default function Index() {
       }
     }
   }, [clips, findClipByName]);
+
+  // Dynamic Environment Cycle (Day/Night)
+  useEffect(() => {
+    if (!autoEnvironment || !viewerRef.current?.isVrmLoaded()) return;
+
+    const updateEnvironmentByTime = () => {
+      const hour = new Date().getHours();
+      let lighting: string;
+      let env: string;
+
+      if (hour >= 5 && hour < 10) {
+        lighting = 'morning';
+        env = 'morning-sky';
+      } else if (hour >= 10 && hour < 17) {
+        lighting = 'daylight';
+        env = 'daylight-sky';
+      } else if (hour >= 17 && hour < 19) {
+        lighting = 'sunset';
+        env = 'sunset-sky';
+      } else {
+        lighting = 'night-outdoor';
+        env = 'night-sky';
+      }
+
+      const viewer = viewerRef.current;
+      if (viewer) {
+        // Only trigger if background images aren't currently override everything 
+        // Background images are usually set via setImageBackground
+        // We'll trust setEnvironment/setLighting to handle state properly inside VrmViewer
+        const currentEnv = viewer.getCurrentEnvironment();
+        if (currentEnv !== env) {
+          viewer.setEnvironment(env);
+          
+          import('@/lib/vrm-lighting').then(({ LIGHTING_PRESETS }) => {
+            if (LIGHTING_PRESETS[lighting]) {
+              viewer.setLighting(LIGHTING_PRESETS[lighting]);
+            }
+          });
+          
+          console.log(`[Dynamic Env] Auto-switched to ${lighting} based on hour ${hour}`);
+        }
+      }
+    };
+
+    updateEnvironmentByTime();
+    const interval = setInterval(updateEnvironmentByTime, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [autoEnvironment]);
 
   // Deep Idle (Boredom V2) Implementation
   useEffect(() => {
@@ -363,6 +422,7 @@ export default function Index() {
               </Tooltip>
               <LightingControls
                 onLightingChange={(config) => viewerRef.current?.setLighting(config)}
+                onExposureChange={(val) => viewerRef.current?.setExposure(val)}
                 initialConfig={viewerRef.current?.getCurrentLighting() || undefined}
               />
             </>

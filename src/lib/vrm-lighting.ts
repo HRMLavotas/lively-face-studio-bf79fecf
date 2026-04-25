@@ -195,6 +195,42 @@ export const LIGHTING_PRESETS: Record<string, LightingConfig> = {
     ambientColor: '#aa44ff',
     keyLightColor: '#44ffaa',
   },
+  'morning': {
+    preset: 'morning',
+    ambientIntensity: 0.9,
+    keyLightIntensity: 1.1,
+    fillLightIntensity: 0.5,
+    rimLightIntensity: 0.3,
+    ambientColor: '#ffe4b5', // Moccasin (warm morning)
+    keyLightColor: '#fff5e6',
+  },
+  'daylight': {
+    preset: 'daylight',
+    ambientIntensity: 0.8,
+    keyLightIntensity: 1.3,
+    fillLightIntensity: 0.6,
+    rimLightIntensity: 0.2,
+    ambientColor: '#ffffff',
+    keyLightColor: '#fffffc',
+  },
+  'sunset': {
+    preset: 'sunset',
+    ambientIntensity: 0.7,
+    keyLightIntensity: 1.5,
+    fillLightIntensity: 0.8,
+    rimLightIntensity: 1.2,
+    ambientColor: '#ff7f50', // Coral
+    keyLightColor: '#ffd700', // Gold
+  },
+  'night-outdoor': {
+    preset: 'night-outdoor',
+    ambientIntensity: 0.4,
+    keyLightIntensity: 0.8,
+    fillLightIntensity: 0.4,
+    rimLightIntensity: 1.5,
+    ambientColor: '#1a1a40', // Deep blue
+    keyLightColor: '#4b0082', // Indigo
+  },
 };
 
 export function createLightingManager(scene: THREE.Scene, isMobile: boolean = false): LightingManager {

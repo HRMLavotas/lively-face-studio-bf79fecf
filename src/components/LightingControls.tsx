@@ -3,13 +3,14 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Slider } from '@/components/ui/slider';
-import { Lightbulb, Sun, Moon, Zap, Check, RotateCcw } from 'lucide-react';
+import { Lightbulb, Sun, Moon, Zap, Check, RotateCcw, Sliders } from 'lucide-react';
 import type { LightingConfig } from '@/lib/vrm-lighting';
 import { LIGHTING_PRESETS } from '@/lib/vrm-lighting';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 interface LightingControlsProps {
   onLightingChange: (config: LightingConfig) => void;
+  onExposureChange?: (value: number) => void;
   initialConfig?: LightingConfig;
   className?: string;
 }
@@ -25,9 +26,11 @@ const PRESET_OPTIONS = [
 export default function LightingControls({
   onLightingChange,
   initialConfig,
+  onExposureChange,
   className = '',
 }: LightingControlsProps) {
   const isMobile = useIsMobile();
+  const [exposure, setExposure] = useState(1.2);
   const [isOpen, setIsOpen] = useState(false);
   const [currentConfig, setCurrentConfig] = useState<LightingConfig>(
     initialConfig || LIGHTING_PRESETS.cyberpunk
@@ -156,6 +159,33 @@ export default function LightingControls({
                  />
                </div>
              ))}
+          </div>
+
+          <div className="h-px bg-border/40 my-3" />
+
+          {/* Exposure Section */}
+          <div className="space-y-3">
+             <div className="flex items-center gap-2 mb-1">
+               <Sliders className="w-3 h-3 text-muted-foreground" />
+               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Rendering</span>
+             </div>
+             <div className="space-y-1.5">
+               <div className="flex justify-between text-[11px]">
+                 <span className="text-muted-foreground">Exposure</span>
+                 <span className="text-primary font-mono">{exposure.toFixed(2)}</span>
+               </div>
+               <Slider
+                 value={[exposure]}
+                 onValueChange={(val) => {
+                   setExposure(val[0]);
+                   onExposureChange?.(val[0]);
+                 }}
+                 min={0.1}
+                 max={3.0}
+                 step={0.05}
+                 className="w-full"
+               />
+             </div>
           </div>
         </div>
       </PopoverContent>

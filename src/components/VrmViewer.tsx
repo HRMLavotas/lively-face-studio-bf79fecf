@@ -63,6 +63,8 @@ export interface VrmViewerHandle {
   setLighting: (config: LightingConfig) => void;
   /** Get current lighting configuration */
   getCurrentLighting: () => LightingConfig | null;
+  /** Set renderer exposure */
+  setExposure: (value: number) => void;
 }
 
 interface VrmViewerProps {
@@ -355,6 +357,11 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     getCurrentLighting: () => {
       return lightingManagerRef.current?.getCurrentConfig() ?? null;
     },
+    setExposure: (value: number) => {
+      if (rendererRef.current) {
+        rendererRef.current.toneMappingExposure = value;
+      }
+    },
   }), [animateCameraToPreset, playVrmaUrl, stopVrmaImperative]);
 
   // When bgImageUrl changes, ensure Three.js scene background is cleared
@@ -637,6 +644,20 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           headNode.add(hitboxMesh);
         }
 
+        // Setup Shoulder Hitboxes
+        ['leftUpperArm', 'rightUpperArm'].forEach(bone => {
+          const boneNode = vrm.humanoid?.getNormalizedBoneNode(bone as any);
+          if (boneNode) {
+            const hitboxGeom = new THREE.SphereGeometry(0.18, 12, 12);
+            const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
+            const hitboxMesh = new THREE.Mesh(hitboxGeom, hitboxMat);
+            hitboxMesh.name = `shouldertap_hitbox_${bone}`;
+            // Position slightly outward on the shoulder
+            hitboxMesh.position.set(bone === 'leftUpperArm' ? 0.05 : -0.05, 0, 0);
+            boneNode.add(hitboxMesh);
+          }
+        });
+
         // Init idle expression rotation
         initIdleExpression();
         
@@ -878,33 +899,40 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
     const allHitMeshes: THREE.Mesh[] = [];
     sceneRef.current.traverse(child => {
-      if (child.name === 'headpat_hitbox') allHitMeshes.push(child as THREE.Mesh);
+      if (child.name === 'headpat_hitbox' || child.name.startsWith('shouldertap_hitbox')) {
+        allHitMeshes.push(child as THREE.Mesh);
+      }
     });
 
     const intersects = rc.intersectObjects(allHitMeshes);
     if (intersects.length > 0) {
-      if (!isPattingRef.current) {
-        isPattingRef.current = true;
-        forceNeutral(true); // Lerp back to center smoothly
-      }
-      
-      if (pointerSpeedY.current > 30) {
-        pointerSpeedY.current = 0; // reset
-        
-        // --- Spawn Taptic Particle ---
-        const ex = e.clientX;
-        const ey = e.clientY;
-        const emojis = ['✨', '💕', '⭐', '🌸'];
-        const randomChar = emojis[Math.floor(Math.random() * emojis.length)];
-        const id = tapticIdCounter.current++;
-        setTapticParticles(prev => [...prev, { id, x: ex, y: ey, char: randomChar }]);
-        setTimeout(() => setTapticParticles(prev => prev.filter(p => p.id !== id)), 1000); // auto clear
-        
-        // --- Trigger Blush ---
-        if (vrmRef.current) {
-          applyMoodOverride('happy', 3, vrmRef.current);
-          saveAffection(2); // Elusan nambah lumayan banyak
+      const hitObj = intersects[0].object;
+      const name = hitObj.name;
+      const ex = e.clientX;
+      const ey = e.clientY;
+
+      if (name === 'headpat_hitbox') {
+        if (!isPattingRef.current) {
+          isPattingRef.current = true;
+          forceNeutral(true); // Lerp back to center smoothly
         }
+        
+        if (pointerSpeedY.current > 30) {
+          pointerSpeedY.current = 0; // reset
+          const emojis = ['✨', '💕', '⭐', '🌸'];
+          const randomChar = emojis[Math.floor(Math.random() * emojis.length)];
+          const id = tapticIdCounter.current++;
+          setTapticParticles(prev => [...prev, { id, x: ex, y: ey, char: randomChar }]);
+          setTimeout(() => setTapticParticles(prev => prev.filter(p => p.id !== id)), 1000);
+          
+          if (vrmRef.current) {
+            applyMoodOverride('happy', 3, vrmRef.current);
+            saveAffection(2);
+          }
+        }
+      } else if (name.startsWith('shouldertap_hitbox')) {
+        // --- Shoulder Tap Reaction (on move - subtle) ---
+        // We'll handle primary tap in onPointerDown below
       }
     } else {
       if (isPattingRef.current) {
@@ -956,7 +984,43 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
              forceNeutral(false); // Resume following mouse
            }
          }}
-         onPointerDown={(e) => { lastPointerY.current = e.clientY; pointerSpeedY.current = 0; }}>
+                   onPointerDown={(e) => { 
+            lastPointerY.current = e.clientY; 
+            pointerSpeedY.current = 0; 
+            if (cameraRef.current && sceneRef.current) {
+              const container = containerRef.current;
+              if (!container) return;
+              const rect = container.getBoundingClientRect();
+              const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+              const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+              const rc = new THREE.Raycaster();
+              rc.setFromCamera({ x, y }, cameraRef.current);
+              const shoulderMeshes: THREE.Mesh[] = [];
+              sceneRef.current.traverse(child => {
+                if (child.name.startsWith('shouldertap_hitbox')) {
+                  shoulderMeshes.push(child as THREE.Mesh);
+                }
+              });
+              const intersects = rc.intersectObjects(shoulderMeshes);
+              if (intersects.length > 0) {
+                const ex = e.clientX;
+                const ey = e.clientY;
+                if (vrmRef.current && !isSpeaking) {
+                  applyMoodOverride('surprised', 2, vrmRef.current);
+                  saveAffection(1);
+                  const reactionClips = clips.filter(c => c.category === 'reaction');
+                  if (reactionClips.length > 0) {
+                    const clip = reactionClips[Math.floor(Math.random() * reactionClips.length)];
+                    playVrmaUrl(clip.url, { loop: false, fadeIn: 0.3 }).catch(console.warn);
+                  }
+                  const id = tapticIdCounter.current++;
+                  setTapticParticles(prev => [...prev, { id, x: ex, y: ey, char: '💢' }]);
+                  setTimeout(() => setTapticParticles(prev => prev.filter(p => p.id !== id)), 800);
+                }
+              }
+            }
+          }}>
+
       
       {/* Taptic Particles Rendering */}
       {tapticParticles.map(p => (

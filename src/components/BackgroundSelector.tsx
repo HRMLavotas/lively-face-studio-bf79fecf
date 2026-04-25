@@ -4,7 +4,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { Layers, Upload, Trash2, Crown, Check } from 'lucide-react';
+import { Layers, Upload, Trash2, Crown, Check, Cloud, Sparkles, Droplets, Snowflake, Leaf } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { BackgroundManager, type BackgroundItem } from '@/lib/background-manager';
 import { ENVIRONMENT_PRESETS } from '@/lib/vrm-environment';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,9 +15,11 @@ interface BackgroundSelectorProps {
   onBackgroundChange: (imageUrl: string) => void;
   onEnvironmentChange: (preset: string) => void;
   currentEnvironment?: string;
-  currentBackground?: string;
-  currentAmbient?: 'none' | 'sakura' | 'rain' | 'snow' | 'leaves';
+  currentBackground?: string | null;
+  ambientEffect?: 'none' | 'sakura' | 'rain' | 'snow' | 'leaves';
   onAmbientChange: (effect: 'none' | 'sakura' | 'rain' | 'snow' | 'leaves') => void;
+  autoEnvironment?: boolean;
+  onToggleAutoEnv?: () => void;
   className?: string;
 }
 
@@ -50,8 +53,10 @@ export default function BackgroundSelector({
   onEnvironmentChange,
   currentEnvironment = 'cyberpunk-void',
   currentBackground,
-  currentAmbient = 'none',
+  ambientEffect = 'none',
   onAmbientChange,
+  autoEnvironment = true,
+  onToggleAutoEnv,
   className = '',
 }: BackgroundSelectorProps) {
   const { user } = useAuth();
