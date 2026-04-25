@@ -101,6 +101,7 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
   const isFadingOutRef = useRef(false); // Track if we're fading out idle expression
   const vrmSceneHiddenRef = useRef<THREE.Group | null>(null); // Store VRM scene before adding to main scene
   const mixerUpdateCountRef = useRef(0); // Count mixer updates before showing model
@@ -329,10 +330,18 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       setIdleExpressionManual(enabled);
     },
     setEnvironment: (preset: string) => {
+      setBgImageUrl(null); // clear HTML image background when switching to env preset
       environmentManagerRef.current?.setEnvironment(preset);
     },
     setImageBackground: (imageUrl: string) => {
-      environmentManagerRef.current?.setCustomImageBackground(imageUrl);
+      setBgImageUrl(imageUrl);
+      // Clear any Three.js scene background so the HTML img layer shows through
+      if (sceneRef.current) {
+        sceneRef.current.background = null;
+        // Remove any existing environment sphere
+        const existing = sceneRef.current.getObjectByName('EnvironmentSphere');
+        if (existing) sceneRef.current.remove(existing);
+      }
     },
     getCurrentEnvironment: () => {
       return environmentManagerRef.current?.getCurrentPreset() ?? null;
@@ -344,6 +353,16 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
       return lightingManagerRef.current?.getCurrentConfig() ?? null;
     },
   }), [animateCameraToPreset, playVrmaUrl, stopVrmaImperative]);
+
+  // When bgImageUrl changes, ensure Three.js scene background is cleared
+  useEffect(() => {
+    if (bgImageUrl && sceneRef.current) {
+      sceneRef.current.background = null;
+      // Remove any existing environment sphere
+      const existing = sceneRef.current.getObjectByName('EnvironmentSphere');
+      if (existing) sceneRef.current.remove(existing);
+    }
+  }, [bgImageUrl]);
 
   // Keep getAudioLevel stable across renders
   const getAudioLevelRef = useRef<(() => number) | undefined>(getAudioLevel);
@@ -554,12 +573,14 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
     renderer.autoClearDepth = true;
     renderer.autoClearStencil = true;
     
-    // Set clear color as fallback (should not be visible if background is set)
-    renderer.setClearColor(0x0a0a1f, 1.0);
+    // Set clear color transparent so HTML background layer shows through
+    renderer.setClearColor(0x000000, 0);
     
     console.log('[VrmViewer] Renderer configured - tone mapping:', renderer.toneMapping, 'exposure:', renderer.toneMappingExposure);
     
     container.appendChild(renderer.domElement);
+    renderer.domElement.style.position = 'relative';
+    renderer.domElement.style.zIndex = '1';
     rendererRef.current = renderer;
 
     // OrbitControls (disabled by default)
@@ -722,6 +743,16 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
 
   return (
     <div ref={containerRef} className={`relative w-full h-full ${className ?? ''}`}>
+      {/* HTML image background — always cover, never affected by Three.js tone mapping */}
+      {bgImageUrl && (
+        <img
+          src={bgImageUrl}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover object-center pointer-events-none"
+          style={{ zIndex: 0 }}
+        />
+      )}
       {!modelUrl && !loading && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-center px-4">
