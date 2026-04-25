@@ -37,11 +37,7 @@ export default function EnvironmentControls({
         variant="outline"
         size="icon"
         onClick={() => setIsVisible(!isVisible)}
-        className={`h-9 w-9 border-border/60 backdrop-blur-md shadow-md transition-colors ${
-          isVisible
-            ? 'bg-primary/20 border-primary/40 text-primary'
-            : 'bg-secondary/70 hover:bg-secondary/90 text-foreground/70 hover:text-foreground'
-        }`}
+        className={`h-9 w-9 btn-overlay shadow-md ${isVisible ? 'active' : ''}`}
         title="Environment Controls"
       >
         <Palette className="w-4 h-4" />
@@ -49,7 +45,7 @@ export default function EnvironmentControls({
 
       {/* Controls Panel */}
       {isVisible && (
-        <Card className="absolute top-0 right-12 w-64 p-4 cyber-glass-strong border-neon-purple">
+        <Card className="absolute top-0 right-12 w-64 p-4 panel-overlay">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-neon-purple">Environment</h3>

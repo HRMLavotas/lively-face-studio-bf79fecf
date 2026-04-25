@@ -29,11 +29,11 @@ export function SpeechModeButton({
       className={`h-10 w-10 shrink-0 shadow-sm transition-all ${
         speechMode
           ? isListening
-            ? 'bg-destructive/80 hover:bg-destructive text-white animate-pulse neon-glow-magenta'
+            ? 'bg-destructive hover:bg-destructive/90 text-white animate-pulse neon-glow-magenta border-0'
             : isStarting
-            ? 'bg-primary/60 text-primary-foreground cursor-wait neon-glow-purple'
-            : 'bg-primary hover:bg-primary/90 text-primary-foreground neon-glow-purple hover-neon-lift'
-          : 'bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 hover-neon-glow neon-glow-purple'
+            ? 'bg-primary/60 text-primary-foreground cursor-wait neon-glow-purple border-0'
+            : 'bg-primary hover:bg-primary/90 text-primary-foreground neon-glow-purple hover-neon-lift border-0'
+          : 'btn-overlay'
       }`}
       title={
         isStarting

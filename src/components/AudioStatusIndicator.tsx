@@ -5,10 +5,8 @@ interface AudioStatusIndicatorProps {
 export default function AudioStatusIndicator({ isSpeaking }: AudioStatusIndicatorProps) {
   return (
     <div
-      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full transition-all duration-300 ${
-        isSpeaking
-          ? 'bg-primary/15 border border-primary/40'
-          : 'bg-secondary/70 border border-border/50'
+      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full transition-all duration-300 btn-overlay ${
+        isSpeaking ? 'active' : ''
       }`}
     >
       {isSpeaking ? (
@@ -27,7 +25,7 @@ export default function AudioStatusIndicator({ isSpeaking }: AudioStatusIndicato
       )}
       <span
         className={`text-[11px] font-medium tracking-wide ${
-          isSpeaking ? 'text-primary' : 'text-muted-foreground'
+          isSpeaking ? 'text-primary' : 'text-foreground/80'
         }`}
       >
         {isSpeaking ? 'Speaking' : 'Idle'}

@@ -498,18 +498,27 @@ export default function ChatPanel({
             }
             disabled={isLoading || !online}
             rows={1}
-            className="resize-none min-h-[40px] max-h-[120px] cyber-glass border-neon-purple text-sm placeholder:text-muted-foreground/50 focus:border-neon-purple-bright focus:neon-glow-purple transition-all scrollbar-thin w-full"
+            className="resize-none min-h-[40px] max-h-[120px] panel-overlay text-sm placeholder:text-muted-foreground/50 focus:border-neon-purple-bright transition-all scrollbar-thin w-full"
             style={{ height: 'auto' }}
           />
         </div>
         {isLoading ? (
           <Button type="button" size="icon" onClick={handleStop}
-            className="h-10 w-10 shrink-0 bg-destructive/80 hover:bg-destructive text-white shadow-sm neon-glow-magenta" title="Hentikan">
+            className="h-10 w-10 shrink-0 bg-destructive hover:bg-destructive/90 text-white shadow-sm neon-glow-magenta border-0" title="Hentikan">
             <Square className="w-3.5 h-3.5 fill-current" />
           </Button>
         ) : (
-          <Button type="button" size="icon" onClick={() => handleSend()} disabled={!input.trim() || !online}
-            className="h-10 w-10 shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm disabled:opacity-40 neon-glow-purple hover-neon-lift">
+          <Button
+            type="button"
+            size="icon"
+            onClick={() => handleSend()}
+            disabled={!input.trim() || !online}
+            className={`h-10 w-10 shrink-0 shadow-sm border-0 transition-all ${
+              input.trim() && online
+                ? 'bg-primary hover:bg-primary/90 text-primary-foreground neon-glow-purple hover-neon-lift'
+                : 'btn-overlay opacity-60 cursor-not-allowed'
+            }`}
+          >
             <Send className="w-4 h-4" />
           </Button>
         )}
@@ -665,13 +674,14 @@ export default function ChatPanel({
       return (
         <div className="absolute bottom-0 left-0 right-0 z-20">
           {/* Safe area for input - ensures it doesn't cover other controls */}
-          <div className="px-3 sm:px-6 md:px-12 lg:px-16 xl:px-20 pt-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-background/98 via-background/90 to-transparent">
+          <div className="px-3 sm:px-6 md:px-12 lg:px-16 xl:px-20 pt-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+            style={{ background: 'linear-gradient(to top, rgba(6,4,14,0.80) 0%, rgba(6,4,14,0.4) 50%, transparent 100%)' }}>
             <div className="max-w-2xl mx-auto">
               <div className="flex items-end gap-2">
                 <div className="flex-1">{inputBar}</div>
                 {messages.length > 0 && (
                   <Button variant="outline" size="icon" onClick={onToggle}
-                    className="relative h-10 w-10 shrink-0 border-border/60 bg-secondary/70 backdrop-blur-md touch-manipulation">
+                    className="relative h-10 w-10 shrink-0 btn-overlay touch-manipulation">
                     <ChevronDown className="w-4 h-4 rotate-180" />
                     {hasUnread && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background animate-pulse" />}
                   </Button>
@@ -684,7 +694,8 @@ export default function ChatPanel({
     }
 
     return (
-      <div className="absolute inset-0 z-20 flex flex-col cyber-glass-strong backdrop-blur-xl animate-slide-up scanlines">
+      <div className="absolute inset-0 z-20 flex flex-col animate-slide-up scanlines"
+        style={{ background: 'rgba(6,4,14,0.92)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', borderTop: '1px solid rgba(168,85,247,0.3)' }}>
         {showHistory ? historyPanel : (
           <>
             <div className="flex items-center justify-between px-4 border-b border-neon-purple corner-accent"
@@ -705,7 +716,8 @@ export default function ChatPanel({
               </div>
             </div>
             <ScrollArea className="flex-1 py-4 px-3" ref={scrollRef}>{messageList}</ScrollArea>
-            <div className="px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-neon-purple cyber-glass">{inputBar}</div>
+            <div className="px-3 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-neon-purple"
+              style={{ background: 'rgba(6,4,14,0.85)' }}>{inputBar}</div>
           </>
         )}
       </div>

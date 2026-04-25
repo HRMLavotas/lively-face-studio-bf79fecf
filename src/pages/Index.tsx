@@ -1,11 +1,9 @@
 import { useState, useRef, useCallback, useEffect, lazy, Suspense } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import AudioStatusIndicator from '@/components/AudioStatusIndicator';
 import ChatPanel from '@/components/ChatPanel';
 import UserMenu from '@/components/UserMenu';
 import NewUserModelBanner from '@/components/NewUserModelBanner';
 import CameraControls from '@/components/CameraControls';
-import EnvironmentControls from '@/components/EnvironmentControls';
 import LightingControls from '@/components/LightingControls';
 import BackgroundSelector from '@/components/BackgroundSelector';
 import OnboardingGuide from '@/components/OnboardingGuide';
@@ -250,70 +248,61 @@ export default function Index() {
 
       {/* Content Layer - VRM Viewer area (for controls only) */}
       <div className="flex-1 relative min-w-0 scanlines z-30 pointer-events-none">
-        {/* Right-side vertical control column */}
-        {modelUrl && (
-          <div className="absolute top-[3.75rem] right-3 md:right-4 flex flex-col gap-2 z-20 pointer-events-auto">
-            <CameraControls
-              onPresetChange={handleCameraPresetChange}
-              onFreeModeChange={handleCameraFreeModeChange}
-              isFreeMode={isCameraFree}
-              currentPreset={currentCameraPreset}
-            />
-            <BackgroundSelector
-              onBackgroundChange={(imageUrl) => viewerRef.current?.setImageBackground(imageUrl)}
-            />
-            <EnvironmentControls
-              onEnvironmentChange={(preset) => viewerRef.current?.setEnvironment(preset)}
-              onImageBackgroundChange={(imageUrl) => viewerRef.current?.setImageBackground(imageUrl)}
-              currentEnvironment={viewerRef.current?.getCurrentEnvironment() ?? 'cyberpunk-void'}
-            />
-            <LightingControls
-              onLightingChange={(config) => viewerRef.current?.setLighting(config)}
-            />
-          </div>
-        )}
+        {/* Right-side vertical control column — all controls in one column */}
+        <div className="absolute top-3 md:top-4 right-3 md:right-4 flex flex-col gap-2 z-40 pointer-events-auto">
+          {/* User menu — identity, stands alone */}
+          <UserMenu />
 
-        {/* Top bar */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2.5 md:px-4 md:py-3 z-40 pointer-events-auto">
-          {/* App name */}
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-primary/15 border border-neon-purple-bright flex items-center justify-center neon-glow-purple">
-              <span className="text-primary text-xs font-bold text-neon-purple">V</span>
+          {/* Divider */}
+          <div className="h-px mx-1" style={{ background: 'rgba(168,85,247,0.25)' }} />
+
+          {/* Chat + scene controls — one logical group */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleToggleChat}
+            className={`relative h-9 w-9 btn-overlay transition-all ${chatOpen ? 'active' : ''}`}
+            title={`${chatOpen ? 'Tutup' : 'Buka'} chat (Ctrl+K)`}
+          >
+            {chatOpen ? <X className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
+            {!chatOpen && hasUnread && (
+              <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background animate-pulse neon-glow-purple-strong" />
+            )}
+          </Button>
+
+          {modelUrl && (
+            <>
+              <CameraControls
+                onPresetChange={handleCameraPresetChange}
+                onFreeModeChange={handleCameraFreeModeChange}
+                isFreeMode={isCameraFree}
+                currentPreset={currentCameraPreset}
+              />
+              <BackgroundSelector
+                onBackgroundChange={(imageUrl) => viewerRef.current?.setImageBackground(imageUrl)}
+                onEnvironmentChange={(preset) => viewerRef.current?.setEnvironment(preset)}
+                currentEnvironment={viewerRef.current?.getCurrentEnvironment() ?? 'cyberpunk-void'}
+              />
+              <LightingControls
+                onLightingChange={(config) => viewerRef.current?.setLighting(config)}
+              />
+            </>
+          )}
+        </div>
+
+        {/* Top bar — app name only */}
+        <div className="absolute top-0 left-0 right-0 flex items-center px-3 py-2.5 md:px-4 md:py-3 z-40 pointer-events-none"
+          style={{ background: 'linear-gradient(to bottom, rgba(6,4,14,0.55) 0%, rgba(6,4,14,0.15) 70%, transparent 100%)', paddingBottom: '3rem' }}>
+          <div className="flex items-center gap-2 pointer-events-auto">
+            <div className="w-7 h-7 rounded-lg btn-overlay flex items-center justify-center">
+              <span className="text-xs font-bold text-neon-purple">V</span>
             </div>
-            <h1 className="text-sm font-semibold text-foreground/90 tracking-tight hidden sm:block text-neon-purple">
+            <h1 className="text-sm font-semibold tracking-tight hidden sm:block text-neon-purple"
+              style={{ textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}>
               VRM Assistant
             </h1>
           </div>
-
-          {/* Right controls */}
-          <div className="flex items-center gap-1.5 md:gap-2">
-            <AudioStatusIndicator isSpeaking={isSpeaking} />
-            <UserMenu />
-
-            {/* Chat toggle */}
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={handleToggleChat}
-              className="relative h-8 w-8 border-neon-purple-bright cyber-glass hover-neon-glow transition-all"
-              title={`${chatOpen ? 'Tutup' : 'Buka'} chat (Ctrl+K) · ? untuk shortcuts`}
-            >
-              {chatOpen
-                ? <X className="w-4 h-4" />
-                : <MessageSquare className="w-4 h-4" />
-              }
-              {/* Unread badge */}
-              {!chatOpen && hasUnread && (
-                <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background animate-pulse neon-glow-purple-strong" />
-              )}
-            </Button>
-          </div>
         </div>
-
-        {/* Bottom gradient fade for input bar - reduced height to avoid covering controls */}
-        {!chatOpen && (
-          <div className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none bg-gradient-to-t from-background/60 to-transparent" />
-        )}
       </div>
 
       {/* Chat panel - always mobile-style (overlay) for both desktop and mobile */}

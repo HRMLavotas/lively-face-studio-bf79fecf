@@ -45,10 +45,8 @@ export default function CameraControls({
         <Button
           variant="outline"
           size="icon"
-          className={`h-9 w-9 border-border/60 backdrop-blur-md shadow-md transition-colors ${
-            isOpen || isFreeMode
-              ? 'bg-primary/20 border-primary/40 text-primary'
-              : 'bg-secondary/70 hover:bg-secondary/90 text-foreground/70 hover:text-foreground'
+          className={`h-9 w-9 btn-overlay shadow-md transition-colors ${
+            isOpen || isFreeMode ? 'active' : ''
           }`}
           title="Camera Controls"
         >
@@ -60,7 +58,7 @@ export default function CameraControls({
         side={isMobile ? 'bottom' : 'left'}
         align={isMobile ? 'end' : 'start'}
         sideOffset={8}
-        className="p-0 overflow-hidden bg-card/95 backdrop-blur-xl border-border/60 shadow-xl"
+        className="p-0 overflow-hidden panel-overlay shadow-xl"
         style={{ width: isMobile ? 'min(calc(100vw - 1.5rem), 22rem)' : '17rem' }}
       >
         {/* Header */}
