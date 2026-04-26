@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SpeechModeButton } from '@/components/SpeechModeButton';
 import { streamChat, generateTTS, parseAnimTag, isOnline, type ChatMessage } from '@/lib/chat-api';
+import { generateVitsAudio, translateToJapanese } from '@/lib/vits-tts';
 import { useConversations } from '@/hooks/useConversations';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useAuth } from '@/hooks/useAuth';
@@ -26,7 +27,7 @@ interface ChatPanelProps {
   onUserMessage?: (text: string) => void;
   voiceId?: string;
   personality?: string;
-  ttsProvider?: 'elevenlabs' | 'webspeech';
+  ttsProvider?: 'elevenlabs' | 'webspeech' | 'vits';
   onTTSRateLimit?: () => void;
   isMobile?: boolean;
   isOpen?: boolean;
@@ -282,7 +283,26 @@ export default function ChatPanel({
             }
             setLastAssistantText(assistantSoFar);
             setIsTTSLoading(true);
-            const ttsResult = await generateTTS(ttsText, voiceId, 2, ttsProvider === 'elevenlabs');
+            let ttsResult;
+            if (ttsProvider === 'vits') {
+              const speaker = localStorage.getItem('vrm.vits_speaker') || '特别周 Special Week (Umamusume Pretty Derby)';
+              const lang = localStorage.getItem('vrm.vits_lang') || '日本語';
+              const autoTranslate = localStorage.getItem('vrm.vits_auto_translate') !== 'false';
+              
+              let ttsInput = ttsText;
+              if (lang === '日本語' && autoTranslate) {
+                ttsInput = await translateToJapanese(ttsText);
+              }
+
+              try {
+                const url = await generateVitsAudio({ text: ttsInput, speaker, language: lang, speed: 1.0 });
+                ttsResult = { url, error: null, source: 'vits' as const };
+              } catch (err) {
+                ttsResult = { url: null, error: (err as Error).message, source: 'none' as const };
+              }
+            } else {
+              ttsResult = await generateTTS(ttsText, voiceId, 2, ttsProvider === 'elevenlabs');
+            }
             setIsTTSLoading(false);
             if (ttsResult.source === 'webspeech' && ttsProvider === 'elevenlabs') onTTSRateLimit?.();
             if (ttsResult.url) onSpeakStart(ttsResult.url, assistantSoFar);
@@ -295,14 +315,33 @@ export default function ChatPanel({
       toast.error(e instanceof Error ? e.message : 'Regenerasi gagal');
       setIsLoading(false);
     }
-  }, [isLoading, messages, personality, voiceId, onSpeakStart]);
+  }, [isLoading, messages, personality, voiceId, ttsProvider, onTTSRateLimit, onSpeakStart]);
 
   // Retry TTS for last response
   const handleRetryTTS = useCallback(async (ttsText?: string, originalText?: string) => {
     const text = ttsText ?? lastAssistantText;
     if (!text) return;
     setIsTTSLoading(true);
-    const ttsResult = await generateTTS(text, voiceId, 2, ttsProvider === 'elevenlabs');
+    let ttsResult;
+    if (ttsProvider === 'vits') {
+      const speaker = localStorage.getItem('vrm.vits_speaker') || '特别周 Special Week (Umamusume Pretty Derby)';
+      const lang = localStorage.getItem('vrm.vits_lang') || '日本語';
+      const autoTranslate = localStorage.getItem('vrm.vits_auto_translate') !== 'false';
+      
+      let ttsInput = text;
+      if (lang === '日本語' && autoTranslate) {
+        ttsInput = await translateToJapanese(text);
+      }
+
+      try {
+        const url = await generateVitsAudio({ text: ttsInput, speaker, language: lang, speed: 1.0 });
+        ttsResult = { url, error: null, source: 'vits' as const };
+      } catch (err) {
+        ttsResult = { url: null, error: (err as Error).message, source: 'none' as const };
+      }
+    } else {
+      ttsResult = await generateTTS(text, voiceId, 2, ttsProvider === 'elevenlabs');
+    }
     setIsTTSLoading(false);
     if (ttsResult.source === 'webspeech' && ttsProvider === 'elevenlabs') onTTSRateLimit?.();
     if (ttsResult.url) {
@@ -404,10 +443,30 @@ export default function ChatPanel({
             loadConversations();
             setLastAssistantText(assistantSoFar);
             setIsTTSLoading(true);
-            const ttsResult = await generateTTS(ttsText, voiceId, 2, ttsProvider === 'elevenlabs');
+            let ttsResult;
+            if (ttsProvider === 'vits') {
+              const speaker = localStorage.getItem('vrm.vits_speaker') || '特别周 Special Week (Umamusume Pretty Derby)';
+              const lang = localStorage.getItem('vrm.vits_lang') || '日本語';
+              const autoTranslate = localStorage.getItem('vrm.vits_auto_translate') !== 'false';
+              
+              let ttsInput = ttsText;
+              if (lang === '日本語' && autoTranslate) {
+                ttsInput = await translateToJapanese(ttsText);
+                console.log("[VITS] Translated for TTS:", ttsInput);
+              }
+
+              try {
+                const url = await generateVitsAudio({ text: ttsInput, speaker, language: lang, speed: 1.0 });
+                ttsResult = { url, error: null, source: 'vits' as const };
+              } catch (err) {
+                console.error('[VITS] Failed:', err);
+                ttsResult = { url: null, error: (err as Error).message, source: 'none' as const };
+              }
+            } else {
+              ttsResult = await generateTTS(ttsText, voiceId, 2, ttsProvider === 'elevenlabs');
+            }
             setIsTTSLoading(false);
             if (ttsResult.source === 'webspeech' && ttsProvider === 'elevenlabs') {
-              // ElevenLabs fell back to Web Speech — notify parent to update provider state
               onTTSRateLimit?.();
             }
             if (ttsResult.url) {
@@ -429,7 +488,7 @@ export default function ChatPanel({
     }
   }, [
     input, isLoading, messages, personality, voiceId, isMobile, isOpen,
-    onUserMessage, onSpeakStart, onUnreadChange,
+    onUserMessage, onSpeakStart, onUnreadChange, ttsProvider,
     ensureConversation, saveMessage, maybeSetTitle, loadConversations, handleRetryTTS,
   ]);
 

@@ -150,7 +150,6 @@ export class EnvironmentManager {
       depthTest: false,
       fog: false, // Disable fog effects
       toneMapped: false, // Disable tone mapping
-      colorSpace: THREE.SRGBColorSpace, // Ensure proper color space
     });
     
     const sphere = new THREE.Mesh(geometry, material);

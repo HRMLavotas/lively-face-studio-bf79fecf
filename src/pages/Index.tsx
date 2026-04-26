@@ -161,6 +161,8 @@ export default function Index() {
       audio.src = '';
       stopWebSpeech();
 
+      console.log("[TTS] Speaking Start. URL:", audioUrl.slice(0, 50) + "...");
+
       // Trigger animations regardless of audio source
       if (messageText) {
         setSpokenMessage(messageText);

@@ -60,17 +60,20 @@ export function initSpringBones(vrm: VRM): void {
   // @ts-expect-error — springBoneManager is part of @pixiv/three-vrm but not in types
   if (vrm.springBoneManager) {
     _hasBuiltinSpring = true;
-    console.log('[Spring] VRM has built-in spring bones — injecting anime bounciness');
-    // @ts-expect-error — Iterating internal springBones
-    const springBones = vrm.springBoneManager.springBones || [];
-    for (const bone of springBones) {
-      if (bone.settings) {
-        // Kurangi drag/damping agar rambut lebih lama memantul (bouncy)
-        bone.settings.dragForce = typeof bone.settings.dragForce === 'number' ? bone.settings.dragForce * 0.7 : 0.4;
-        // Tingkatkan stiffness agar cepat kembali ke titik tengah (snappy gaya anime) 
-        bone.settings.stiffnessForce = typeof bone.settings.stiffnessForce === 'number' ? bone.settings.stiffnessForce * 1.5 : 1.5;
-        // Kurangi gravity supaya rambut terkesan ringan (fluffy)
-        bone.settings.gravityPower = typeof bone.settings.gravityPower === 'number' ? bone.settings.gravityPower * 0.5 : 0.2;
+    const mgr = vrm.springBoneManager as any;
+    const joints = mgr.joints || mgr.springBones || [];
+    
+    if (joints.length > 0) {
+      console.log(`[Spring] VRM has ${joints.length} spring joints — injecting anime bounciness`);
+    }
+
+    for (const j of joints) {
+      // Handle both v1 (settings object) and v2 (direct properties or similar)
+      const s = j.settings || j; 
+      if (s) {
+        if (typeof s.dragForce === 'number') s.dragForce *= 0.7;
+        if (typeof s.stiffnessForce === 'number') s.stiffnessForce *= 1.5;
+        if (typeof s.gravityPower === 'number') s.gravityPower *= 0.5;
       }
     }
     return;
