@@ -75,6 +75,7 @@ interface VrmViewerProps {
   currentMessage?: string;
   className?: string;
   getAudioLevel?: () => number;
+  getFrequencyData?: () => Uint8Array;
   onLevelUp?: (newLevel: number) => void;
   ambientEffect?: 'none' | 'sakura' | 'rain' | 'snow' | 'leaves';
   showSubtitles?: boolean;
@@ -82,7 +83,7 @@ interface VrmViewerProps {
 }
 
 const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer(
-  { modelUrl, isSpeaking = false, isWebSpeechActive = false, audioElement, currentMessage, className, getAudioLevel, onLevelUp, ambientEffect = 'none', showSubtitles = true, clips = [] },
+  { modelUrl, isSpeaking = false, isWebSpeechActive = false, audioElement, currentMessage, className, getAudioLevel, getFrequencyData, onLevelUp, ambientEffect = 'none', showSubtitles = true, clips = [] },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -378,6 +379,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
   // Keep getAudioLevel stable across renders
   const getAudioLevelRef = useRef<(() => number) | undefined>(getAudioLevel);
   getAudioLevelRef.current = getAudioLevel;
+  const getFrequencyDataRef = useRef<(() => Uint8Array) | undefined>(getFrequencyData);
+  getFrequencyDataRef.current = getFrequencyData;
   const isWebSpeechActiveRef = useRef(isWebSpeechActive);
   isWebSpeechActiveRef.current = isWebSpeechActive;
 
@@ -443,7 +446,8 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
         const level = isWebSpeechActiveRef.current
           ? getWebSpeechLipLevel(delta)
           : (getAudioLevelRef.current?.() ?? 0);
-        updateLipSync(level, vrm, delta);
+        const freqData = getFrequencyDataRef.current?.();
+        updateLipSync(level, vrm, delta, freqData);
       }
 
       // 5. Idle expression rotation (auto mood system) - set expression values
@@ -919,22 +923,37 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
           forceNeutral(true); // Lerp back to center smoothly
         }
         
-        if (pointerSpeedY.current > 30) {
+        const sensitivity = parseInt(localStorage.getItem('vrm.interactionSensitivity') || '20');
+        if (pointerSpeedY.current > sensitivity) {
           pointerSpeedY.current = 0; // reset
           const emojis = ['✨', '💕', '⭐', '🌸'];
           const randomChar = emojis[Math.floor(Math.random() * emojis.length)];
           const id = tapticIdCounter.current++;
-          setTapticParticles(prev => [...prev, { id, x: ex, y: ey, char: randomChar }]);
-          setTimeout(() => setTapticParticles(prev => prev.filter(p => p.id !== id)), 1000);
+          
+          // Spawn multiple particles if enabled
+          const showParticles = localStorage.getItem('vrm.showParticles') !== 'false';
+          if (showParticles) {
+            setTapticParticles(prev => [
+              ...prev, 
+              { id, x: ex, y: ey, char: randomChar },
+              { id: id + 10000, x: ex + (Math.random() - 0.5) * 50, y: ey + (Math.random() - 0.5) * 50, char: '💖' }
+            ]);
+            setTimeout(() => setTapticParticles(prev => prev.filter(p => p.id !== id && p.id !== id + 10000)), 1000);
+          }
           
           if (vrmRef.current) {
             applyMoodOverride('happy', 3, vrmRef.current);
             saveAffection(2);
+            // Play Sparkle Sound
+            const interactionVol = parseFloat(localStorage.getItem('vrm.interactionVolume') || '0.6');
+            console.log("[SFX] Playing Headpat sound at vol:", interactionVol);
+            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
+            audio.volume = interactionVol;
+            audio.play().catch(e => console.warn("[SFX] Play failed:", e));
           }
         }
       } else if (name.startsWith('shouldertap_hitbox')) {
         // --- Shoulder Tap Reaction (on move - subtle) ---
-        // We'll handle primary tap in onPointerDown below
       }
     } else {
       if (isPattingRef.current) {
@@ -1020,6 +1039,13 @@ const VrmViewer = forwardRef<VrmViewerHandle, VrmViewerProps>(function VrmViewer
                   if (vrmRef.current) {
                     applyMoodOverride('surprised', 2, vrmRef.current);
                     saveAffection(1);
+                    // Play Tap Sound
+                    const interactionVol = parseFloat(localStorage.getItem('vrm.interactionVolume') || '0.6');
+                    console.log("[SFX] Playing Shoulder Tap sound at vol:", interactionVol);
+                    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3');
+                    audio.volume = interactionVol;
+                    audio.play().catch(e => console.warn("[SFX] Play failed:", e));
+                    
                     const reactionClips = clips.filter(c => c.category === 'reaction');
                     if (reactionClips.length > 0) {
                       const clip = reactionClips[Math.floor(Math.random() * reactionClips.length)];

@@ -8,6 +8,8 @@ export interface AudioAnalyserControls {
   connectMediaStream: (stream: MediaStream) => void;
   /** Read current normalized volume 0–1 */
   getAudioLevel: () => number;
+  /** Read current frequency data */
+  getFrequencyData: () => Uint8Array;
   /** Whether audio is currently being analysed */
   isActive: boolean;
   /** Disconnect and clean up */
@@ -112,16 +114,19 @@ export function useAudioAnalyser(): AudioAnalyserControls {
 
   const getAudioLevel = useCallback((): number => {
     if (!analyserRef.current || !dataArrayRef.current) return 0;
-
-    analyserRef.current.getByteFrequencyData(dataArrayRef.current as Uint8Array<ArrayBuffer>);
-
-    // Calculate RMS volume normalized to 0–1
+    analyserRef.current.getByteFrequencyData(dataArrayRef.current);
     let sum = 0;
     for (let i = 0; i < dataArrayRef.current.length; i++) {
       sum += dataArrayRef.current[i];
     }
     const average = sum / dataArrayRef.current.length;
-    return Math.min(average / 128, 1.0); // normalize
+    return Math.min(average / 128, 1.0);
+  }, []);
+
+  const getFrequencyData = useCallback((): Uint8Array => {
+    if (!analyserRef.current || !dataArrayRef.current) return new Uint8Array(0);
+    analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+    return dataArrayRef.current;
   }, []);
 
   const disconnect = useCallback(() => {
@@ -133,5 +138,12 @@ export function useAudioAnalyser(): AudioAnalyserControls {
     setIsActive(false);
   }, []);
 
-  return { connectAudioElement, connectMediaStream, getAudioLevel, isActive, disconnect };
+  return { 
+    connectAudioElement, 
+    connectMediaStream, 
+    getAudioLevel, 
+    getFrequencyData, 
+    isActive, 
+    disconnect 
+  };
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
@@ -165,15 +165,15 @@ export default function BackgroundSelector({
           </Button>
         </DialogTrigger>
 
-        <DialogContent className="panel-overlay flex flex-col w-[calc(100vw-2rem)] sm:max-w-2xl" style={{ maxHeight: '85dvh' }} aria-describedby="bg-desc">
+        <DialogContent className="panel-overlay flex flex-col w-[calc(100vw-2rem)] sm:max-w-2xl" style={{ maxHeight: '85dvh' }}>
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-neon-purple flex items-center gap-2">
               <Layers className="w-4 h-4" />
               Background
             </DialogTitle>
-            <p id="bg-desc" className="text-xs" style={{ color: 'rgba(192,168,255,0.5)' }}>
+            <DialogDescription className="text-xs" style={{ color: 'rgba(192,168,255,0.5)' }}>
               Pilih preset warna atau gambar sebagai background karakter
-            </p>
+            </DialogDescription>
           </DialogHeader>
 
           {/* Tabs */}

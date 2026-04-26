@@ -644,10 +644,24 @@ const JAW_SCALE     = 0.28;
 const SMOOTH_OPEN   = 0.18;
 const SMOOTH_CLOSE  = 0.08;
 
-export function updateLipSync(audioLevel: number, vrm: VRM, delta = 0.016): void {
+export function updateLipSync(audioLevel: number, vrm: VRM, delta = 0.016, freqData?: Uint8Array): void {
   if (!vrm.expressionManager) return;
 
-  // Asymmetric smoothing: open fast, close slowly — avoids "stuck open" look
+  // 1. Voice Energy Analysis (High-frequency detection)
+  let excitement = 0;
+  if (freqData && freqData.length > 0) {
+    // Analyze upper-mid to high frequencies (approx indices 40-60 in a 128-fft)
+    let highSum = 0;
+    const startIdx = Math.floor(freqData.length * 0.5);
+    const endIdx = freqData.length;
+    for (let i = startIdx; i < endIdx; i++) {
+        highSum += freqData[i];
+    }
+    const highAvg = highSum / (endIdx - startIdx);
+    excitement = Math.pow(highAvg / 128, 2); // Squared to emphasize peaks
+  }
+
+  // 2. Base Lip Sync Logic
   const smoothing = audioLevel > _smoothedMouth ? SMOOTH_OPEN : SMOOTH_CLOSE;
   _smoothedMouth += (audioLevel - _smoothedMouth) * smoothing;
 
@@ -668,6 +682,7 @@ export function updateLipSync(audioLevel: number, vrm: VRM, delta = 0.016): void
   const blend = _shapeTimer / SHAPE_DURATION;
 
   if (mode === 'perfectsync') {
+    // 3. Voice-to-Emotion modulation
     const em = vrm.expressionManager;
 
     // Clear shape blendshapes
@@ -676,6 +691,14 @@ export function updateLipSync(audioLevel: number, vrm: VRM, delta = 0.016): void
     // Suppress smile slightly while speaking (natural — hard to smile while talking)
     em.setValue('MouthSmileLeft',  Math.max(0, _currentPS.MouthSmileLeft  * (1 - mouthValue * 0.5)));
     em.setValue('MouthSmileRight', Math.max(0, _currentPS.MouthSmileRight * (1 - mouthValue * 0.5)));
+
+    // Eye Widening & Brow Raise based on excitement (Voice-to-Emotion)
+    const eyeWide = Math.max(_currentPS.EyeWideLeft, excitement * 0.6);
+    const browUp = Math.max(_currentPS.BrowOuterUpLeft, excitement * 0.4);
+    em.setValue('EyeWideLeft', eyeWide);
+    em.setValue('EyeWideRight', eyeWide);
+    em.setValue('BrowOuterUpLeft', browUp);
+    em.setValue('BrowOuterUpRight', browUp);
 
     // Wibu / Anime Enhancement:
     // If audio is very loud, strongly emphasize 'MouthFunnel' (O shape) or MouthPucker (U shape)
@@ -702,6 +725,13 @@ export function updateLipSync(audioLevel: number, vrm: VRM, delta = 0.016): void
   } else {
     const em = vrm.expressionManager;
     for (const s of MOUTH_SHAPES_STD) em.setValue(s, 0);
+
+    // Apply voice-to-emotion to standard surprised/happy based on excitement
+    const surprisedBase = Math.max(_currentStd.surprised, excitement * 0.5);
+    const happyExtra = Math.max(_currentStd.happy, excitement * 0.3);
+    em.setValue('surprised', surprisedBase);
+    em.setValue('happy', happyExtra);
+
     const primary   = MOUTH_SHAPES_STD[_currentShape];
     const secondary = MOUTH_SHAPES_STD[(_currentShape + 1) % 3];
     em.setValue(primary,   mouthValue * (1 - blend * 0.35));

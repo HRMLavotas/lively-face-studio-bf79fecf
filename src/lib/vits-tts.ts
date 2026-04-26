@@ -45,6 +45,10 @@ export async function generateVitsAudio({
   language = "日本語",
   speed = 1.0
 }: VitsRequest): Promise<string> {
+  // Use public mirror by default, but allow override via localStorage
+  const customUrl = localStorage.getItem('vrm.vits_custom_url');
+  const baseUrl = customUrl || HF_SPACE_URL;
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -55,7 +59,7 @@ export async function generateVitsAudio({
 
   // Gradio 4 flow for /tts_fn
   // data: [text, character, language, speed, symbol_input]
-  const callRes = await fetch(`${HF_SPACE_URL}/gradio_api/call/tts_fn`, {
+  const callRes = await fetch(`${baseUrl.replace(/\/$/, '')}/gradio_api/call/tts_fn`, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -77,7 +81,7 @@ export async function generateVitsAudio({
   const { event_id } = await callRes.json();
 
   return new Promise((resolve, reject) => {
-    const eventSource = new EventSource(`${HF_SPACE_URL}/gradio_api/call/tts_fn/${event_id}`);
+    const eventSource = new EventSource(`${baseUrl.replace(/\/$/, '')}/gradio_api/call/tts_fn/${event_id}`);
     
     eventSource.addEventListener("complete", (event: any) => {
       eventSource.close();
@@ -86,7 +90,7 @@ export async function generateVitsAudio({
         if (Array.isArray(parsed) && parsed.length >= 2) {
           const audioData = parsed[1];
           if (audioData && audioData.url) resolve(audioData.url);
-          else if (audioData && audioData.name) resolve(`${HF_SPACE_URL}/file=${audioData.name}`);
+          else if (audioData && audioData.name) resolve(`${baseUrl.replace(/\/$/, '')}/file=${audioData.name}`);
           else reject(new Error("Audio URL not found in completion data"));
         } else {
           reject(new Error("Unexpected completion data format"));

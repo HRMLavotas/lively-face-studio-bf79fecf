@@ -11,6 +11,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import KeyboardShortcutsHelp from '@/components/KeyboardShortcutsHelp';
 import { MessageSquare, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { LIGHTING_PRESETS } from '@/lib/vrm-lighting';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useAuth } from '@/hooks/useAuth';
@@ -65,7 +67,7 @@ export default function Index() {
 
   const viewerRef = useRef<VrmViewerHandle>(null);
 
-  const { connectAudioElement, getAudioLevel } = useAudioAnalyser();
+  const { connectAudioElement, getAudioLevel, getFrequencyData } = useAudioAnalyser();
   const { clips, findMatch, findClipByName } = useVrmaTriggers();
   const userLangPref =
     (typeof window !== 'undefined'
@@ -149,6 +151,30 @@ export default function Index() {
       return next;
     });
   }, []);
+
+  const handleEnvironmentChange = useCallback((preset: string) => {
+    viewerRef.current?.setEnvironment(preset);
+    if (autoEnvironment) {
+       const envToLight: Record<string, string> = {
+        'cyberpunk-void': 'cyberpunk',
+        'neon-city': 'neon',
+        'studio-dark': 'dramatic',
+        'studio-light': 'studio',
+        'sunset-gradient': 'soft',
+        'green-screen': 'studio'
+      };
+      const lightPreset = envToLight[preset] || 'studio';
+      const config = LIGHTING_PRESETS[lightPreset];
+      if (config) {
+        viewerRef.current?.setLighting(config);
+        // Add toast to let user know it happened
+        toast.success(`Scene: ${preset.split('-')[0].toUpperCase()} mode activated`, {
+          description: `Lighting automatically set to ${lightPreset} mode.`,
+          duration: 2000,
+        });
+      }
+    }
+  }, [autoEnvironment]);
 
   const handleSpeakStart = useCallback(
     (audioUrl: string, messageText?: string) => {
@@ -357,6 +383,7 @@ export default function Index() {
               audioElement={audioEl}
               currentMessage={spokenMessage}
               getAudioLevel={audioConnected ? getAudioLevel : undefined}
+              getFrequencyData={audioConnected ? getFrequencyData : undefined}
               onLevelUp={handleLevelUp}
               ambientEffect={ambientEffect}
               showSubtitles={showSubtitles}
@@ -412,7 +439,7 @@ export default function Index() {
                   <span>
                     <BackgroundSelector
                       onBackgroundChange={(imageUrl) => viewerRef.current?.setImageBackground(imageUrl)}
-                      onEnvironmentChange={(preset) => viewerRef.current?.setEnvironment(preset)}
+                      onEnvironmentChange={handleEnvironmentChange}
                       currentEnvironment={viewerRef.current?.getCurrentEnvironment() ?? 'cyberpunk-void'}
                       currentAmbient={ambientEffect}
                       onAmbientChange={handleAmbientChange}

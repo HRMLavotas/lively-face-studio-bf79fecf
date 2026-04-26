@@ -56,6 +56,7 @@ export default function TTSSettings({
   });
   const [vitsLang, setVitsLang] = useState(() => localStorage.getItem('vrm.vits_lang') || '日本語');
   const [autoTranslate, setAutoTranslate] = useState(() => localStorage.getItem('vrm.vits_auto_translate') !== 'false');
+  const [vitsCustomUrl, setVitsCustomUrl] = useState(() => localStorage.getItem('vrm.vits_custom_url') || '');
 
   // Load web speech voices (async — voices populate after voiceschanged)
   useEffect(() => {
@@ -380,6 +381,33 @@ export default function TTSSettings({
                 >
                   <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${autoTranslate ? 'left-5' : 'left-1'}`} />
                 </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-medium text-muted-foreground">Private Mirror URL (Gradio)</label>
+                  {vitsCustomUrl && (
+                    <button 
+                      onClick={() => { setVitsCustomUrl(''); localStorage.removeItem('vrm.vits_custom_url'); }}
+                      className="text-[10px] text-primary hover:underline"
+                    >
+                      Reset Default
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="https://user-space.hf.space"
+                  value={vitsCustomUrl}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    setVitsCustomUrl(val);
+                    if (val) localStorage.setItem('vrm.vits_custom_url', val);
+                    else localStorage.removeItem('vrm.vits_custom_url');
+                  }}
+                  className="w-full bg-secondary border border-border/50 rounded-lg px-3 py-1.5 text-xs focus:ring-1 focus:ring-primary outline-none font-mono"
+                />
+                <p className="text-[9px] text-muted-foreground">Duplicate Space di HF untuk menghindari antrean publik.</p>
               </div>
 
               <div className="px-3 py-2.5 rounded-lg bg-indigo-500/5 border border-indigo-500/10 text-[10px] text-muted-foreground leading-relaxed">

@@ -152,12 +152,12 @@ export class LightingManager {
 export const LIGHTING_PRESETS: Record<string, LightingConfig> = {
   'cyberpunk': {
     preset: 'cyberpunk',
-    ambientIntensity: 0.8,
-    keyLightIntensity: 1.2,
-    fillLightIntensity: 0.4,
-    rimLightIntensity: 0.3,
-    ambientColor: '#88cccc',
-    keyLightColor: '#ffffff',
+    ambientIntensity: 0.9,
+    keyLightIntensity: 1.4,
+    fillLightIntensity: 0.6,
+    rimLightIntensity: 1.0,
+    ambientColor: '#2b0054', // Deep Purple base
+    keyLightColor: '#ff00ff', // Bright Magenta highlights
   },
   'studio': {
     preset: 'studio',
@@ -188,12 +188,12 @@ export const LIGHTING_PRESETS: Record<string, LightingConfig> = {
   },
   'neon': {
     preset: 'neon',
-    ambientIntensity: 0.4,
-    keyLightIntensity: 1.0,
-    fillLightIntensity: 0.6,
-    rimLightIntensity: 1.2,
-    ambientColor: '#aa44ff',
-    keyLightColor: '#44ffaa',
+    ambientIntensity: 0.6,
+    keyLightIntensity: 1.2,
+    fillLightIntensity: 0.8,
+    rimLightIntensity: 1.5,
+    ambientColor: '#00ffff', // Cyan base
+    keyLightColor: '#ff00ff', // Magenta highlights
   },
   'morning': {
     preset: 'morning',

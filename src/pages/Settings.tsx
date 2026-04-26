@@ -6,6 +6,7 @@ import { ArrowLeft, Settings as SettingsIcon } from 'lucide-react';
 import ModelManager from '@/components/ModelManager';
 import LanguagePreference from '@/components/LanguagePreference';
 import TTSSettings from '@/components/TTSSettings';
+import InteractionSettings from '@/components/InteractionSettings';
 import { useTTSProvider } from '@/hooks/useTTSProvider';
 import { useUserRole } from '@/hooks/useUserRole';
 
@@ -94,6 +95,8 @@ export default function Settings() {
           voices={voices}
           onVoicesRefresh={fetchVoices}
         />
+        <div className="border-t border-neon-purple" />
+        <InteractionSettings />
         <div className="border-t border-neon-purple" />
         <LanguagePreference />
       </div>

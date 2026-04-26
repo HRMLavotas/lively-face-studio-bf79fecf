@@ -278,6 +278,8 @@ export class EnvironmentManager {
         sphereTexture.repeat.set(-1, 1); // Negative X flips horizontally
         sphereTexture.offset.set(1, 0);  // Offset to compensate for flip
         
+        sphereTexture.colorSpace = THREE.SRGBColorSpace;
+        
         // Use MeshBasicMaterial to ensure NO lighting effects
         const material = new THREE.MeshBasicMaterial({
           map: sphereTexture,
@@ -288,7 +290,6 @@ export class EnvironmentManager {
           fog: false, // Disable fog effects
           // Ensure material is completely unlit (not affected by lights)
           toneMapped: false, // Disable tone mapping
-          colorSpace: THREE.SRGBColorSpace, // Ensure proper color space
         });
         
         // Ensure the sphere is not affected by any lighting
