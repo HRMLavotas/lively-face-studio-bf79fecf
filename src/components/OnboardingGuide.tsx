@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Bot, Upload, MessageSquare, Volume2, ArrowRight, X, ChevronRight, Layers, Lightbulb, Camera } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
-const STORAGE_KEY = 'vrm_onboarding_v2';
+const STORAGE_KEY = 'vrm_onboarding_v3';
 
 const STEPS = [
   {
@@ -33,6 +33,15 @@ const STEPS = [
     desc: 'Di Pengaturan, pilih suara ElevenLabs atau gunakan Web Speech gratis untuk asisten berbicara.',
     action: null,
     hint: null,
+  },
+  {
+    icon: Lightbulb,
+    iconColor: 'text-indigo-400',
+    iconBg: 'bg-indigo-500/10 border-indigo-500/20',
+    title: '✨ Anime Mode (Baru!)',
+    desc: 'Bisa mengobrol dalam bahasa apa pun, tapi asisten membalas dengan suara Jepang asli. Aktifkan "Auto-Translate to JP" di Pengaturan TTS.',
+    action: { label: 'Coba VITS Anime', to: '/settings?tab=tts' },
+    hint: '💡 Biar asisten makin berasa "Kawaii"',
   },
   {
     icon: MessageSquare,

@@ -295,6 +295,7 @@ export default function TTSSettings({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-foreground">Hugging Face (VITS)</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-bold border border-indigo-500/20 animate-pulse">NEW</span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 font-medium border border-indigo-500/20">ANIME</span>
                 {provider === 'vits' && (
                   <CheckCircle className="w-3.5 h-3.5 text-primary" />
